@@ -1,390 +1,244 @@
-# Better GI MiniWeb - 專案結構說明
+# Better GI MiniWeb
 
-本專案是一個基於 Flask 的 BetterGI Webhook 接收器，用於接收 BetterGI 發送的通知、截圖與事件資訊，並透過 SQLite 保存資料與 Web 頁面進行展示。
+Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI 的 Webhook 通知、結果、時間戳與 Base64 截圖，並將資料寫入 SQLite，再透過瀏覽器 Dashboard 顯示最新事件。
 
-目前專案已可正常運作，但整體仍偏向「原型階段」，部分模組存在：
+本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：使用者只需要準備目前最新穩定版 Python，建立單一虛擬環境後即可安裝與啟動。
 
-* 耦合過高
-* 邏輯集中
-* 缺少分層
-* 缺少錯誤處理
-* 可維護性不足
+## 專案用途
 
-本文件主要用於：
+* 接收 BetterGI 以 `POST /` 發送的 JSON Webhook。
+* 將事件資料寫入本機 SQLite 資料庫 `bettergi.db`。
+* 以 `GET /` 顯示最近 10 筆通知與截圖。
+* 以 `GET /image/<id>` 讀取資料庫中的 Base64 截圖並回傳 PNG。
+* 以 `GET /health` 提供啟動與監控驗證。
 
-* 開發者理解架構
-* 後續重構
-* 問題定位
-* 功能擴充
+## 目前 Runtime 與套件版本
 
----
+| 類別 | 版本策略 |
+| --- | --- |
+| Python | `>=3.14,<3.15`，以目前最新穩定版 Python 3.14 為目標 |
+| Flask | `>=3.1.3,<3.2` |
+| Flask-SQLAlchemy | `>=3.1.1,<3.2` |
+| SQLAlchemy | `>=2.0.49,<2.1`，使用 SQLAlchemy 2.x 查詢與 Session API |
+| gevent | `>=26.4.0,<27.0` |
+| Werkzeug | `>=3.1.8,<3.2` |
+| Jinja2 | `>=3.1.6,<3.2` |
+| MarkupSafe | `>=3.0.3,<3.1` |
+| itsdangerous | `>=2.2.0,<2.3` |
+| click | `>=8.3.3,<8.4` |
 
-# 專案結構
+> 專案目前沒有 Node.js、Frontend build pipeline、.NET、Dockerfile 或 docker-compose 設定，因此不需要額外安裝 Node.js、npm、.NET Runtime 或 Docker 才能啟動。
 
-```text id="f8f4y7"
+## 檔案結構
+
+```text
 better_gi_miniweb/
-│
-├── app.py                # Flask 主入口
-├── run.py                # 啟動腳本
-├── models.py             # SQLite 資料模型
-├── webhook.py            # Webhook 接收邏輯
-├── routes.py             # Web 路由
-├── templates/            # HTML 頁面
-├── static/               # CSS / JS / 圖片
-├── database.db           # SQLite 資料庫
-└── requirements.txt      # Python 依賴
+├── .github/workflows/python-app.yml  # GitHub Actions：Python 3.14 安裝、Ruff lint、pytest
+├── app.py                            # Flask application factory、資料模型、路由、Webhook 保存邏輯
+├── init_database.py                  # SQLite 初始化與 post_load 匯入工具
+├── main.py                           # 舊入口相容層，保留 from main import app 用法
+├── pyproject.toml                    # 專案 metadata、Python 版本要求、pytest / ruff 設定
+├── requirements.txt                  # Runtime 相依套件版本範圍
+├── run.py                            # gevent 啟動器與 Runtime / 依賴檢查
+├── run run.py.bat                    # Windows 啟動主服務腳本
+├── run test.py.bat                   # Windows 啟動 Webhook 捕捉測試服務腳本
+├── static/css/style_v2.css           # Dashboard 樣式
+├── templates/base.html               # Dashboard Jinja2 模板
+├── test.py                           # 開發用原始 Webhook 請求捕捉服務
+└── tests/test_app.py                 # 基本啟動、Webhook、SQLite、圖片端點測試
 ```
 
----
+## 主要檔案功能
 
-# 核心模組分析
+### `app.py`
 
-## app.py
+核心 Web 應用，包含：
 
-Flask 主程序。
+* `create_app()`：建立 Flask app、套用設定、初始化 SQLAlchemy。
+* `PostData`：SQLite 資料模型。
+* `save_webhook_payload()`：驗證並保存 BetterGI Webhook payload。
+* `POST /`：接收 Webhook JSON。
+* `GET /`：顯示 Dashboard。
+* `GET /image/<id>`：輸出截圖。
+* `GET /health`：健康檢查。
 
-目前問題：
+### `run.py`
 
-* 初始化邏輯過多
-* 路由與資料庫初始化混在一起
-* 缺少 application factory
-* 不利於大型化擴充
+正式啟動入口，負責：
 
-建議：
+* 檢查 Python 是否為 `3.14+`。
+* 檢查 Flask / gevent 等依賴是否已安裝。
+* 自動建立 SQLite tables。
+* 使用 gevent WSGI server 啟動服務。
 
-* 改成 create_app()
-* 將 config 拆分
-* 分離 blueprint
+### `init_database.py`
 
----
+資料庫工具，負責：
 
-## webhook.py
+* 建立 SQLite tables。
+* 匯入 `post_load/*.txt` 中由 `test.py` 捕捉的 JSON。
 
-負責接收 BetterGI POST webhook。
+### `main.py`
 
-目前功能：
+相容舊版使用方式。新程式碼建議直接使用 `app.py`，但既有 `from main import app` 或 `Post_data` 用法仍可運作。
 
-* 接收 JSON
-* 解析通知內容
-* 保存截圖
-* 寫入 SQLite
+### `test.py`
 
-目前問題：
+開發輔助服務，用來把收到的原始 Webhook request 存到 `post_load/`，方便排查 BetterGI 實際送出的 payload。
 
-### 1. 缺少驗證
+## 安裝方式
 
-目前任何人都能 POST：
+### Windows PowerShell
 
-```text id="z9n3eu"
-http://127.0.0.1:222/
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python run.py
 ```
 
-沒有：
+### Windows CMD
 
-* token
-* signature
-* source verify
-
-存在安全風險。
-
----
-
-### 2. Base64 截圖直接寫資料庫
-
-目前直接保存 Base64：
-
-問題：
-
-* SQLite 容易膨脹
-* 查詢速度下降
-* 記憶體占用增加
-
-建議：
-
-```text id="s92a3s"
-截圖保存成檔案
-資料庫只保存路徑
+```bat
+py -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python run.py
 ```
 
----
+### macOS / Linux
 
-### 3. 缺少錯誤處理
-
-目前若：
-
-* JSON 格式錯誤
-* 截圖損壞
-* 欄位缺失
-
-可能直接報錯。
-
-建議增加：
-
-```python id="c4f0rk"
-try:
-    ...
-except Exception:
-    ...
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python run.py
 ```
 
-並加入 logging。
+## 啟動方式
 
----
+安裝依賴後執行：
 
-## models.py
-
-SQLite 資料模型。
-
-目前問題：
-
-* 欄位定義不明確
-* 缺少 migration
-* 缺少 ORM abstraction
-
-建議：
-
-* 使用 SQLAlchemy
-* 加入 Alembic
-* 增加 index
-
----
-
-## routes.py
-
-Web Dashboard 路由。
-
-目前功能：
-
-* 顯示最近通知
-* 顯示截圖
-* 顯示時間資訊
-
-目前問題：
-
-### 1. 無分頁
-
-當資料量變大：
-
-* 首頁會變慢
-* SQLite 查詢壓力增加
-
-建議：
-
-```sql id="tr7yma"
-LIMIT 50
-OFFSET x
+```bash
+python run.py
 ```
 
----
+啟動成功後開啟：
 
-### 2. 缺少搜尋
+* Dashboard：<http://127.0.0.1:222/>
+* Webhook URL：<http://127.0.0.1:222/>
+* Health Check：<http://127.0.0.1:222/health>
 
-目前只能看最近通知。
+如需改 port：
 
-建議增加：
-
-* 關鍵字搜尋
-* 日期篩選
-* 任務分類
-
----
-
-## templates/
-
-HTML 模板。
-
-目前問題：
-
-* UI 與邏輯耦合
-* 缺少 component 化
-* 缺少 loading 狀態
-* 缺少即時更新
-
-建議：
-
-* 改用 Vue / React
-* WebSocket 即時刷新
-* 分離 API 與 Frontend
-
----
-
-# 目前主要技術債
-
-## 高耦合
-
-目前：
-
-```text id="b0i1n7"
-Webhook
-↓
-資料處理
-↓
-SQLite
-↓
-HTML
+```bash
+PORT=8080 python run.py
 ```
 
-幾乎全部直接耦合。
+Windows PowerShell：
 
-問題：
-
-* 很難測試
-* 很難替換資料庫
-* 很難擴充 API
-
----
-
-## 缺少分層
-
-目前偏：
-
-```text id="h8n6qz"
-Route = Business Logic
+```powershell
+$env:PORT = "8080"
+python run.py
 ```
 
-應改成：
+## Webhook API 範例
 
-```text id="g5u8kx"
-Route
-↓
-Service
-↓
-Repository
-↓
-Database
+最小可接受 payload：
+
+```bash
+curl -X POST http://127.0.0.1:222/ \
+  -H "Content-Type: application/json" \
+  -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
 
----
+完整範例：
 
-## 缺少 Logging
-
-目前 debug 能力不足。
-
-建議：
-
-* logging module
-* rotating log
-* request log
-* error trace
-
----
-
-## 缺少 Config 管理
-
-目前設定可能散落。
-
-建議：
-
-```text id="p7r2lc"
-config/
-├── dev.py
-├── prod.py
-└── default.py
+```json
+{
+  "event": "notification",
+  "result": "success",
+  "timestamp": "2026-05-07T00:00:00Z",
+  "message": "任務完成\n其他詳細資訊",
+  "screenshot": "iVBORw0KGgo..."
+}
 ```
 
----
+欄位說明：
 
-# 建議重構方向
+* `event`：必填，非空字串。
+* `result`：選填，任務結果。
+* `timestamp`：選填，BetterGI 發出的時間。
+* `message`：選填，顯示在 Dashboard 的訊息。
+* `screenshot`：選填，Base64 PNG 字串。
 
-## Phase 1 - 穩定化
+## 驗證方式
 
-目標：
-
-* 增加錯誤處理
-* 增加 logging
-* 增加 request validation
-* 分離設定檔
-
-預估：
-
-1~2 天
-
----
-
-## Phase 2 - 架構整理
-
-目標：
-
-* Flask Blueprint
-* Service Layer
-* SQLAlchemy ORM
-* API 分層
-
-預估：
-
-3~5 天
-
----
-
-## Phase 3 - 即時化
-
-目標：
-
-* WebSocket
-* 即時通知
-* 自動刷新
-* 多裝置同步
-
-預估：
-
-5~7 天
-
----
-
-# 未來可擴充方向
-
-## BetterGI 控制中心
-
-可進一步擴充：
-
-* 多設備管理
-* 任務控制
-* 腳本狀態
-* 遠端啟停
-* OCR 結果分析
-
----
-
-## 通知系統
-
-未來可接入：
-
-* Telegram
-* Discord
-* LINE Notify
-* Email
-
----
-
-## 資料分析
-
-可加入：
-
-* 任務成功率
-* 執行時間統計
-* 錯誤分析
-* 長時間掛機分析
-
----
-
-# 結論
-
-目前專案已具備：
-
-* Webhook 接收
-* 本地保存
-* 基礎 Dashboard
-
-但仍偏向：
-
-```text id="h2z5bm"
-Prototype / MVP
+```bash
+python -m pip install -r requirements.txt
+python -m pip install pytest ruff
+ruff check .
+pytest
 ```
 
-若未來要大型化：
+手動啟動驗證：
 
-* 必須分層
-* 必須降低耦合
-* 必須增加 logging
-* 必須拆分資料流
-* 必須改善錯誤處理
+1. 執行 `python run.py`。
+2. 開啟 <http://127.0.0.1:222/health>，應回傳 `{"status":"ok"}`。
+3. 用 README 的 `curl` 範例送出 Webhook。
+4. 開啟 <http://127.0.0.1:222/>，應看得到新事件。
+5. 檢查專案根目錄是否建立 `bettergi.db`。
+
+## 常見問題
+
+### 啟動時顯示 Python 版本太舊
+
+請安裝目前最新穩定版 Python，重新建立 `.venv`，再執行：
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### 啟動時顯示 Missing dependency
+
+代表尚未安裝 requirements，請先啟用虛擬環境並執行：
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### Dashboard 沒有資料
+
+請確認 BetterGI Webhook URL 指向 `http://127.0.0.1:222/`，且用 `POST` 傳送 JSON。也可以先使用 README 的 `curl` 範例確認服務是否正常。
+
+### `/image/<id>` 回傳 Invalid image data
+
+該筆資料的 `screenshot` 欄位不是合法 Base64。請檢查 BetterGI 發出的 payload，或使用 `test.py` 捕捉原始請求。
+
+## 已知技術債
+
+* 截圖仍以 Base64 文字保存於 SQLite，資料量大時會造成資料庫膨脹。
+* Webhook 尚未加入 token、signature 或來源驗證，公開到外網前應補上驗證機制。
+* 目前 Dashboard 無分頁、搜尋、篩選與即時更新。
+* 尚未導入 Alembic migration；資料模型調整仍依賴 `db.create_all()`。
+* 前端仍是單一 Jinja2 template，尚未 component 化。
+
+## 後續建議重構方向
+
+1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
+2. 新增 Webhook token / HMAC signature 驗證。
+3. 拆分 Blueprint、service layer、repository layer，降低路由與資料庫耦合。
+4. 導入 Alembic migration 管理資料庫 schema。
+5. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
+6. 增加更多 pytest 測試與端到端啟動測試。
+
+## 破壞性變更說明
+
+* `POST /` 現在要求 `Content-Type: application/json`，且 body 必須是 JSON object。
+* `event` 欄位現在為必填非空字串；缺少時會回傳 HTTP 400。
+* 啟動器不再自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
+* 首次啟動不再建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。

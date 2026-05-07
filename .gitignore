@@ -1,3 +1,16 @@
-*.txt
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Runtime data
 *.db
 bettergi.db
+post_load/
+client.txt
+*.txt

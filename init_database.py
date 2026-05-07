@@ -1,46 +1,42 @@
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+"""SQLite database initialization utilities for Better GI MiniWeb."""
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bettergi.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Any
 
-class Post_data(db.Model):
-    id = db.Column(db.Integer, primary_key=True, unique=True, autoincrement=True)
-    event = db.Column(db.Text, nullable=False)
-    result = db.Column(db.Text, nullable=True)
-    timestamp = db.Column(db.Text, nullable=True)
-    screenshot = db.Column(db.Text, nullable=True, default=None)
-    create_time = db.Column(db.DateTime, default=datetime.now)
-    message = db.Column(db.Text)
+from app import PostData, app, db, save_webhook_payload
+
+# Historical class name kept for compatibility with older local scripts.
+Post_data = PostData
+POST_LOAD_DIR = Path("post_load")
 
 
-def init_db():
+def init_db() -> None:
+    """Create all SQLite tables if they do not already exist."""
+
     with app.app_context():
         print("Initializing database...")
         db.create_all()
         print("Database initialized.")
 
-def write_json_to_db():
-    import os
-    import json
-    if not os.path.exists('./post_load'):
-        return
-    with app.app_context():
-        for filename in os.listdir('./post_load'):
-            file = os.path.join('./post_load', filename)
-            with open(file, 'r', encoding='utf-8') as e:
-                dict_list = json.loads(e.read())['json']
-            possible_fields = ['action', 'conclusion', 'task', 'screenshot']
-            record = Post_data(event=dict_list['event'])
-            for field in possible_fields:
-                setattr(record, field, dict_list.get(field))  # 如果字段不存在则默认为 None
-            db.session.add(record)
-            db.session.commit()
 
-if __name__ == '__main__':
+def write_json_to_db(post_load_dir: Path = POST_LOAD_DIR) -> None:
+    """Import captured webhook JSON files from ``post_load`` if present."""
+
+    if not post_load_dir.exists():
+        return
+
+    with app.app_context():
+        for file_path in sorted(post_load_dir.glob("*.txt")):
+            with file_path.open("r", encoding="utf-8") as file:
+                captured_request: dict[str, Any] = json.load(file)
+            payload = captured_request.get("json")
+            if isinstance(payload, dict):
+                save_webhook_payload(payload)
+
+
+if __name__ == "__main__":
     init_db()
     write_json_to_db()
