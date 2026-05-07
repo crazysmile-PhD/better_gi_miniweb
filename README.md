@@ -1,47 +1,390 @@
-### 项目介绍
-一个附属于[BetterGI](https://github.com/babalae/better-genshin-impact)的项目，通过bettergi的webhook构建。<br>
-当BetterGI使用webhook发送通知的时候，运行本项目可以接受其数据然后存储在本地的Sqlite数据库中，用户可以访问本地http://127.0.0.1:222 来查阅BetterGI发送的通知。使用python的flask构建服务器后端。<br>
-当前bettergi的版本号：0.41.0<br>
-主要运用在BetterGI一条龙模块，下文有使用说明。<br>
-项目截图（测试图）<br>
-<img src="https://github.com/user-attachments/assets/ea9d14b3-61a8-4fdc-a9c8-edf111b63d83" alt="示例图片" width="394" height="501">
+# Better GI MiniWeb - 專案結構說明
 
-### 使用方法（自行配置python环境）
-1. 克隆本项目到本地
-2. 点击运行`run run.py.bat`启动服务器。出现`服务已启动...`无报错则启动成功。在浏览器输入`http://127.0.0.1:222`即可查阅。首次启动无信息。
-3. 配置bettergi的webhook信息。左下角的`设置`点击进入，然后webhook端点如图设置即可。当服务器启动后可以点击`发送`按钮检查是否可行。
-<img src="https://github.com/user-attachments/assets/317470d0-94cb-4a93-af3b-c3896e59bfe3" alt="示例图片">
+本專案是一個基於 Flask 的 BetterGI Webhook 接收器，用於接收 BetterGI 發送的通知、截圖與事件資訊，並透過 SQLite 保存資料與 Web 頁面進行展示。
 
-4. （可选）使用内网穿透，注意转发本地端口222。 [这是找的B站视频，非本人录制](https://www.bilibili.com/video/BV1KF411m7Z7) 。之后可以在非局域网内访问网页端口。这里可能存在国内网站备案问题，请注意遵守相关法律。
+目前專案已可正常運作，但整體仍偏向「原型階段」，部分模組存在：
 
-### 继续开发
+* 耦合過高
+* 邏輯集中
+* 缺少分層
+* 缺少錯誤處理
+* 可維護性不足
 
-你可以使用`test.py`来记录webhook发送的POST数据包（无网页前端）<br>
-[webhook文档](https://bettergi.com/dev/webhook.html)<br>
-**文件说明**<br>
-`init_database.py`：初始化数据库，构建对应的数据模型，如果有test.py生成的txt文件则会导入到数据库中。<br>
-`main.py`：主要的服务器程序。<br>
-`run.py`：以WSGI服务器运行`main.py`<br>
-`test.py`：只接受来自BetterGI的POST数据，然后以json的格式保存在post_load/###.txt 文件中。格式为：<br>
-<img src="https://github.com/user-attachments/assets/13570b41-8da5-4c4e-8c4e-14355c5d75ac" alt="示例图片" height="368" width="362">
+本文件主要用於：
+
+* 開發者理解架構
+* 後續重構
+* 問題定位
+* 功能擴充
 
 ---
 
-### 法律免责声明
+# 專案結構
 
-本开源项目由Because66666开发并提供。在使用本项目之前，请仔细阅读以下免责声明：<br>
-一、项目性质与使用风险<br>
-本开源项目是基于python而开发的，旨在为开发者社区提供一种BetterGI的webhook可视化的解决方案。然而，由于开源项目的复杂性和开发环境的多样性，本项目可能存在各种潜在的技术缺陷、漏洞或其他问题。开发者在使用本项目时，应充分认识到这些潜在风险，并自行承担由此可能产生的一切后果。<br>
-二、责任限制<br>
-技术风险：开发者不保证本项目的性能、稳定性、安全性或兼容性。在任何情况下，开发者不对因使用本项目而导致的任何直接、间接、偶然、特殊或后果性的损害承担责任，包括但不限于数据丢失、系统故障、业务中断或利润损失等。<br>
-知识产权风险：尽管开发者已尽合理努力确保本项目不侵犯任何第三方的知识产权，但开发者不能保证本项目完全不存在知识产权争议。如果因使用本项目而引发任何知识产权纠纷，开发者不承担任何责任，用户应自行解决相关争议并承担相应费用。<br>
-法律合规风险：开发者不保证本项目符合所有国家和地区的法律法规要求。用户在使用本项目时，应确保其使用行为符合当地法律法规的规定。如果因用户违反法律法规而产生任何法律后果，开发者不承担任何责任。<br>
-三、项目更新与维护<br>
-开发者可能会根据自身计划和资源情况对本项目进行更新和维护。然而，开发者不保证项目更新的及时性、频率或质量。用户应自行关注项目更新信息，并在使用前确保所使用的版本符合其需求。如果用户因未及时更新项目而导致任何问题，开发者不承担任何责任。<br>
-四、用户反馈与支持<br>
-开发者欢迎用户对本项目提出反馈和建议，但开发者不保证对所有反馈和建议进行回复或采纳。此外，开发者不提供任何形式的商业支持或保证。用户在使用过程中遇到问题时，应自行寻求解决方案或通过社区渠道获取帮助。<br>
-五、免责声明的适用范围<br>
-本免责声明适用于本开源项目的全部内容，包括但不限于源代码、文档、示例代码、工具等。用户在下载、安装、使用或分发本项目时，即视为已充分理解并同意接受本免责声明的全部条款。<br>
-开发者希望用户能够理解并接受上述免责声明，合理、谨慎地使用本开源项目。开发者将尽最大努力确保项目的质量和发展，但无法承担因使用本项目而产生的一切潜在法律后果。如果您对本免责声明有任何疑问或需要进一步的信息，请通过Github[开源地址](https://github.com/Because66666/better_gi_miniweb)的Issues与开发者联系。<br>
-Because66666<br>
-2025.1.21<br>
+```text id="f8f4y7"
+better_gi_miniweb/
+│
+├── app.py                # Flask 主入口
+├── run.py                # 啟動腳本
+├── models.py             # SQLite 資料模型
+├── webhook.py            # Webhook 接收邏輯
+├── routes.py             # Web 路由
+├── templates/            # HTML 頁面
+├── static/               # CSS / JS / 圖片
+├── database.db           # SQLite 資料庫
+└── requirements.txt      # Python 依賴
+```
+
+---
+
+# 核心模組分析
+
+## app.py
+
+Flask 主程序。
+
+目前問題：
+
+* 初始化邏輯過多
+* 路由與資料庫初始化混在一起
+* 缺少 application factory
+* 不利於大型化擴充
+
+建議：
+
+* 改成 create_app()
+* 將 config 拆分
+* 分離 blueprint
+
+---
+
+## webhook.py
+
+負責接收 BetterGI POST webhook。
+
+目前功能：
+
+* 接收 JSON
+* 解析通知內容
+* 保存截圖
+* 寫入 SQLite
+
+目前問題：
+
+### 1. 缺少驗證
+
+目前任何人都能 POST：
+
+```text id="z9n3eu"
+http://127.0.0.1:222/
+```
+
+沒有：
+
+* token
+* signature
+* source verify
+
+存在安全風險。
+
+---
+
+### 2. Base64 截圖直接寫資料庫
+
+目前直接保存 Base64：
+
+問題：
+
+* SQLite 容易膨脹
+* 查詢速度下降
+* 記憶體占用增加
+
+建議：
+
+```text id="s92a3s"
+截圖保存成檔案
+資料庫只保存路徑
+```
+
+---
+
+### 3. 缺少錯誤處理
+
+目前若：
+
+* JSON 格式錯誤
+* 截圖損壞
+* 欄位缺失
+
+可能直接報錯。
+
+建議增加：
+
+```python id="c4f0rk"
+try:
+    ...
+except Exception:
+    ...
+```
+
+並加入 logging。
+
+---
+
+## models.py
+
+SQLite 資料模型。
+
+目前問題：
+
+* 欄位定義不明確
+* 缺少 migration
+* 缺少 ORM abstraction
+
+建議：
+
+* 使用 SQLAlchemy
+* 加入 Alembic
+* 增加 index
+
+---
+
+## routes.py
+
+Web Dashboard 路由。
+
+目前功能：
+
+* 顯示最近通知
+* 顯示截圖
+* 顯示時間資訊
+
+目前問題：
+
+### 1. 無分頁
+
+當資料量變大：
+
+* 首頁會變慢
+* SQLite 查詢壓力增加
+
+建議：
+
+```sql id="tr7yma"
+LIMIT 50
+OFFSET x
+```
+
+---
+
+### 2. 缺少搜尋
+
+目前只能看最近通知。
+
+建議增加：
+
+* 關鍵字搜尋
+* 日期篩選
+* 任務分類
+
+---
+
+## templates/
+
+HTML 模板。
+
+目前問題：
+
+* UI 與邏輯耦合
+* 缺少 component 化
+* 缺少 loading 狀態
+* 缺少即時更新
+
+建議：
+
+* 改用 Vue / React
+* WebSocket 即時刷新
+* 分離 API 與 Frontend
+
+---
+
+# 目前主要技術債
+
+## 高耦合
+
+目前：
+
+```text id="b0i1n7"
+Webhook
+↓
+資料處理
+↓
+SQLite
+↓
+HTML
+```
+
+幾乎全部直接耦合。
+
+問題：
+
+* 很難測試
+* 很難替換資料庫
+* 很難擴充 API
+
+---
+
+## 缺少分層
+
+目前偏：
+
+```text id="h8n6qz"
+Route = Business Logic
+```
+
+應改成：
+
+```text id="g5u8kx"
+Route
+↓
+Service
+↓
+Repository
+↓
+Database
+```
+
+---
+
+## 缺少 Logging
+
+目前 debug 能力不足。
+
+建議：
+
+* logging module
+* rotating log
+* request log
+* error trace
+
+---
+
+## 缺少 Config 管理
+
+目前設定可能散落。
+
+建議：
+
+```text id="p7r2lc"
+config/
+├── dev.py
+├── prod.py
+└── default.py
+```
+
+---
+
+# 建議重構方向
+
+## Phase 1 - 穩定化
+
+目標：
+
+* 增加錯誤處理
+* 增加 logging
+* 增加 request validation
+* 分離設定檔
+
+預估：
+
+1~2 天
+
+---
+
+## Phase 2 - 架構整理
+
+目標：
+
+* Flask Blueprint
+* Service Layer
+* SQLAlchemy ORM
+* API 分層
+
+預估：
+
+3~5 天
+
+---
+
+## Phase 3 - 即時化
+
+目標：
+
+* WebSocket
+* 即時通知
+* 自動刷新
+* 多裝置同步
+
+預估：
+
+5~7 天
+
+---
+
+# 未來可擴充方向
+
+## BetterGI 控制中心
+
+可進一步擴充：
+
+* 多設備管理
+* 任務控制
+* 腳本狀態
+* 遠端啟停
+* OCR 結果分析
+
+---
+
+## 通知系統
+
+未來可接入：
+
+* Telegram
+* Discord
+* LINE Notify
+* Email
+
+---
+
+## 資料分析
+
+可加入：
+
+* 任務成功率
+* 執行時間統計
+* 錯誤分析
+* 長時間掛機分析
+
+---
+
+# 結論
+
+目前專案已具備：
+
+* Webhook 接收
+* 本地保存
+* 基礎 Dashboard
+
+但仍偏向：
+
+```text id="h2z5bm"
+Prototype / MVP
+```
+
+若未來要大型化：
+
+* 必須分層
+* 必須降低耦合
+* 必須增加 logging
+* 必須拆分資料流
+* 必須改善錯誤處理
