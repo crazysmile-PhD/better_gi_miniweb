@@ -18,6 +18,11 @@ def save_data(dict_list: dict):
     db.session.commit()
 
 
+@app.route('/api/healthz', methods=['GET'])
+def healthz():
+    return jsonify({'status': 'ok'})
+
+
 @app.route('/', methods=['POST'])
 def main():
     # 从bettergi的webhook接收数据

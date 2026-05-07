@@ -1,0 +1,14 @@
+[project]
+name = "better-gi-miniweb"
+version = "0.1.0"
+description = "BetterGI webhook receiver and mini web dashboard"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "Flask>=3,<4",
+  "Flask-SQLAlchemy>=3.1,<4",
+  "SQLAlchemy>=2,<3",
+  "gevent>=26,<27",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

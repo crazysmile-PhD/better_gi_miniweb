@@ -1,0 +1,4 @@
+Flask>=3,<4
+Flask-SQLAlchemy>=3.1,<4
+SQLAlchemy>=2,<3
+gevent>=26,<27

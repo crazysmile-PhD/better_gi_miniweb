@@ -1,3 +1,10 @@
-*.txt
 *.db
-bettergi.db
+*.py[cod]
+__pycache__/
+.pytest_cache/
+client.txt
+post_load/
+instance/
+
+# Keep dependency manifests versioned.
+!requirements.txt
