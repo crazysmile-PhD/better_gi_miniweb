@@ -1,42 +1,48 @@
-from flask import Flask, jsonify, request
-import os
+"""Development helper server that captures raw webhook requests to post_load/."""
+
+from __future__ import annotations
+
 import json
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
+POST_PATH = Path("post_load")
+POST_PATH.mkdir(exist_ok=True)
 
 
-post_path = r'.\post_load'
-if not os.path.exists(post_path):
-    os.mkdir(post_path)
+def save_post(request_info: dict[str, Any]) -> Path:
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+    filename = f"{current_time}.txt"
+    fullpath = POST_PATH / filename
+    with fullpath.open("w", encoding="utf-8") as file:
+        json.dump(request_info, file, ensure_ascii=False, indent=2)
+    return fullpath
 
-def save_post(request_info):
-    current_time = datetime.now().strftime('%Y-%m-%d %H-%M-%S')
-    filename = f'{current_time}.txt'
-    fullpath = os.path.join(post_path, filename)
-    with open(fullpath, 'w', encoding='utf-8') as file:
-        file.write(json.dumps(request_info))
 
-@app.route('/', methods=['POST'])
+@app.post("/")
 def main():
     request_info = {
-        'method': request.method,
-        'url': request.url,
-        'headers': dict(request.headers),
-        'args': dict(request.args),
-        'form': dict(request.form),
-        'json': request.json if request.is_json else None,
-        'data': request.get_data(as_text=True)  # 获取原始数据作为文本
+        "method": request.method,
+        "url": request.url,
+        "headers": dict(request.headers),
+        "args": dict(request.args),
+        "form": dict(request.form),
+        "json": request.get_json(silent=True) if request.is_json else None,
+        "data": request.get_data(as_text=True),
     }
 
-    save_post(request_info)
-    return jsonify({'msg': 'OK'})
+    saved_path = save_post(request_info)
+    return jsonify({"msg": "OK", "path": str(saved_path)})
 
 
-@app.route('/page', methods=['GET'])
+@app.get("/page")
 def page():
-    return jsonify({'msg': 'OK'})
+    return jsonify({"msg": "OK"})
 
 
-if __name__ == '__main__':
-    app.run(debug=True, port=222)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=222, debug=False)
