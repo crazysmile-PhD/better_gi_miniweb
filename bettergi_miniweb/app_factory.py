@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -9,14 +10,22 @@ from typing import Any
 from flask import Flask
 
 from bettergi_miniweb.extensions import db
-from bettergi_miniweb.routes import dashboard_bp, image_bp, webhook_bp
+from bettergi_miniweb.routes import dashboard_bp, health_bp, image_bp, webhook_bp
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_URI = f"sqlite:///{BASE_DIR / 'bettergi.db'}"
 
 
+def configure_logging() -> None:
+    """Configure application logging from environment variables."""
+
+    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
+
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     """Create and configure the Flask application."""
+
+    configure_logging()
 
     app = Flask(
         __name__,
@@ -40,5 +49,6 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     app.register_blueprint(webhook_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(health_bp)
     app.register_blueprint(image_bp)
     return app

@@ -7,7 +7,6 @@ gunicorn, gevent, ``flask run``, and older local scripts.
 
 from __future__ import annotations
 
-import logging
 import os
 
 from bettergi_miniweb import (
@@ -18,7 +17,6 @@ from bettergi_miniweb import (
     save_webhook_payload,
 )
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 app = create_app()
 
 __all__ = [
