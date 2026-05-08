@@ -9,7 +9,7 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 * 接收 BetterGI 以 `POST /` 發送的 JSON Webhook。
 * 將事件資料寫入本機 SQLite 資料庫 `bettergi.db`。
 * 以 `GET /` 顯示最近 10 筆通知與截圖。
-* 以 `GET /image/<id>` 讀取資料庫中的 Base64 截圖並回傳 PNG。
+* 以 `GET /image/<int:image_id>` 讀取資料庫中的 Base64 截圖並回傳 PNG。
 * 以 `GET /health` 提供啟動與監控驗證。
 
 ## 目前 Runtime 與套件版本
@@ -34,14 +34,20 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 ```text
 better_gi_miniweb/
 ├── .github/workflows/python-app.yml  # GitHub Actions：Python 3.14 安裝、Ruff lint、pytest
-├── app.py                            # Flask application factory、資料模型、路由、Webhook 保存邏輯
+├── app.py                            # WSGI / Flask CLI / python app.py 相容入口
+├── bettergi_miniweb/                 # Flask package：factory、config、models、routes、services
+│   ├── app_factory.py                # create_app、extensions 初始化、blueprint registration
+│   ├── config.py                     # BASE_DIR、DB URI、PORT、LOG_LEVEL 與基本 config mapping
+│   ├── extensions.py                 # Flask extension instances
+│   ├── models.py                     # SQLAlchemy models
+│   ├── routes/                       # Blueprint route modules
+│   └── services/                     # Webhook service logic
+├── docs/ARCHITECTURE.md              # 開發者架構與維護規則
 ├── init_database.py                  # SQLite 初始化與 post_load 匯入工具
 ├── main.py                           # 舊入口相容層，保留 from main import app 用法
 ├── pyproject.toml                    # 專案 metadata、Python 版本要求、pytest / ruff 設定
 ├── requirements.txt                  # Runtime 相依套件版本範圍
 ├── run.py                            # gevent 啟動器與 Runtime / 依賴檢查
-├── run run.py.bat                    # Windows 啟動主服務腳本
-├── run test.py.bat                   # Windows 啟動 Webhook 捕捉測試服務腳本
 ├── static/css/style_v2.css           # Dashboard 樣式
 ├── templates/base.html               # Dashboard Jinja2 模板
 ├── test.py                           # 開發用原始 Webhook 請求捕捉服務
@@ -52,15 +58,21 @@ better_gi_miniweb/
 
 ### `app.py`
 
-核心 Web 應用，包含：
+相容入口，包含：
 
-* `create_app()`：建立 Flask app、套用設定、初始化 SQLAlchemy。
-* `PostData`：SQLite 資料模型。
-* `save_webhook_payload()`：驗證並保存 BetterGI Webhook payload。
-* `POST /`：接收 Webhook JSON。
-* `GET /`：顯示 Dashboard。
-* `GET /image/<id>`：輸出截圖。
-* `GET /health`：健康檢查。
+* `app = create_app()`：保留 WSGI / Flask CLI / `python app.py` 用法。
+* 匯出 `create_app`、`db`、`PostData`、`normalize_webhook_payload`、`save_webhook_payload`。
+* 不放 route、model 或 service 實作。
+
+### `bettergi_miniweb/`
+
+核心 Flask package，包含：
+
+* `app_factory.py`：建立 Flask app、套用設定、初始化 SQLAlchemy、註冊 blueprints。
+* `config.py`：集中管理 `BASE_DIR`、預設 DB URI、預設 port、`LOG_LEVEL` 與基本 config mapping。
+* `models.py`：SQLite 資料模型。
+* `routes/`：`POST /`、`GET /`、`GET /health`、`GET /image/<int:image_id>` blueprints。
+* `services/`：Webhook payload 驗證、正規化與保存邏輯。
 
 ### `run.py`
 
@@ -175,6 +187,44 @@ curl -X POST http://127.0.0.1:222/ \
 * `message`：選填，顯示在 Dashboard 的訊息。
 * `screenshot`：選填，Base64 PNG 字串。
 
+
+## For Developers
+
+更完整的架構與維護規則請先閱讀 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。該文件說明 request flow、模組責任邊界、新增 route/service 的步驟、model/config 修改注意事項、測試規則與 PR checklist。
+
+### 安裝開發依賴
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install pytest ruff
+```
+
+### 執行測試與檢查
+
+```bash
+ruff check .
+pytest
+git diff --check
+test ! -e bettergi.db
+```
+
+測試應使用 temporary SQLite，不應污染專案根目錄的 `bettergi.db`。
+
+### 入口與 factory 的用途差異
+
+* `bettergi_miniweb.app_factory.create_app()`：主要 application factory，負責建立 Flask app、載入 config、初始化 extensions 並註冊 blueprints。
+* `app.py`：相容 WSGI / Flask CLI / `python app.py` 的入口，仍匯出 `app`、`create_app`、`db`、`PostData` 與 webhook service helpers。
+* `main.py`：舊入口相容層，保留 `from main import app`、`Post_data`、`save_data` 等歷史用法；未確認舊依賴前不要刪除。
+
+### 目前架構拆分原則
+
+* `app_factory.py` 只保留 app 建立、config loading、extension 初始化與 blueprint registration。
+* `routes/` 只處理 HTTP request/response 與 status code。
+* `services/` 放可測試的 business/application logic，例如 webhook payload normalization 與 persistence。
+* `models.py` 放 SQLAlchemy models；任何 schema 變更都需要獨立規劃 migration / 相容策略。
+* 不要把 security、migration、file storage refactor 混在同一個 PR。
+
 ## 驗證方式
 
 ```bash
@@ -215,7 +265,7 @@ python -m pip install -r requirements.txt
 
 請確認 BetterGI Webhook URL 指向 `http://127.0.0.1:222/`，且用 `POST` 傳送 JSON。也可以先使用 README 的 `curl` 範例確認服務是否正常。
 
-### `/image/<id>` 回傳 Invalid image data
+### `/image/<int:image_id>` 回傳 Invalid image data
 
 該筆資料的 `screenshot` 欄位不是合法 Base64。請檢查 BetterGI 發出的 payload，或使用 `test.py` 捕捉原始請求。
 
