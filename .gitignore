@@ -14,3 +14,4 @@ bettergi.db
 post_load/
 client.txt
 *.txt
+!requirements.txt
