@@ -219,10 +219,17 @@ test ! -e bettergi.db
 
 ### 目前架構拆分原則
 
-* `app_factory.py` 只保留 app 建立、config loading、extension 初始化與 blueprint registration。
-* `routes/` 只處理 HTTP request/response 與 status code。
+### 目前架構拆分原則
+
+本專案是小型 Flask 工具，不採用大型 enterprise architecture。現有 package 邊界已足夠，後續重構目標是降低維護成本，不是繼續增加檔案或抽象層。
+
+* `app_factory.py` 只保留 app 建立、config loading、extension 初始化與 blueprint registration；不要把 business logic 塞回 `app_factory.py`。
+* `routes/` 只處理 HTTP request/response 與 status code；不要讓 route 直接承擔複雜資料處理。
 * `services/` 放可測試的 business/application logic，例如 webhook payload normalization 與 persistence。
 * `models.py` 放 SQLAlchemy models；任何 schema 變更都需要獨立規劃 migration / 相容策略。
+* `routes/health.py`、`extensions.py`、`routes/__init__.py`、`services/__init__.py` 雖然偏薄，但目前可接受，不要只為了減少檔案數而合併。
+* 只有在兩個檔案永遠一起修改、沒有不同依賴、沒有不同測試需求，且合併後責任仍清楚時，才允許合併。
+* 不要新增 `repositories/`、`domain/`、`use_cases/`、`interfaces/`、`adapters/`、`schemas/`、`dto/`、`managers/` 或 generic helpers。
 * 不要把 security、migration、file storage refactor 混在同一個 PR。
 
 ## 驗證方式
