@@ -10,6 +10,28 @@ import pytest
 from bettergi_miniweb import PostData, create_app, db, save_webhook_payload
 
 
+PYTHON_SOURCE_FILES = (
+    "app.py",
+    "main.py",
+    "run.py",
+    "init_database.py",
+    "test.py",
+    "bettergi_miniweb/__init__.py",
+    "bettergi_miniweb/app_factory.py",
+    "bettergi_miniweb/config.py",
+    "bettergi_miniweb/extensions.py",
+    "bettergi_miniweb/models.py",
+    "bettergi_miniweb/routes/__init__.py",
+    "bettergi_miniweb/routes/dashboard.py",
+    "bettergi_miniweb/routes/health.py",
+    "bettergi_miniweb/routes/image.py",
+    "bettergi_miniweb/routes/webhook.py",
+    "bettergi_miniweb/services/__init__.py",
+    "bettergi_miniweb/services/webhook_service.py",
+    "tests/test_app.py",
+)
+
+
 @pytest.fixture(autouse=True)
 def project_database_is_not_created():
     project_db = Path("bettergi.db")
@@ -54,6 +76,18 @@ def post_payload(client, payload: dict[str, str | None]) -> int:
     response = client.post("/", json=payload)
     assert response.status_code == 201
     return response.get_json()["id"]
+
+
+def test_python_sources_keep_normal_line_structure():
+    for filename in PYTHON_SOURCE_FILES:
+        lines = Path(filename).read_text(encoding="utf-8").splitlines()
+        assert lines, f"{filename} is empty"
+        assert max(len(line) for line in lines) <= 160, f"{filename} appears compressed"
+
+    assert len(Path("app.py").read_text(encoding="utf-8").splitlines()) > 2
+    assert len(Path("bettergi_miniweb/app_factory.py").read_text().splitlines()) > 2
+    assert len(Path("bettergi_miniweb/__init__.py").read_text().splitlines()) > 2
+    assert len(Path("tests/test_app.py").read_text(encoding="utf-8").splitlines()) > 2
 
 
 def test_webhook_rejects_non_json_request(client):
