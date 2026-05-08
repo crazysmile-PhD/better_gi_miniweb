@@ -219,6 +219,8 @@ test ! -e bettergi.db
 
 ### 目前架構拆分原則
 
+### 目前架構拆分原則
+
 本專案是小型 Flask 工具，不採用大型 enterprise architecture。現有 package 邊界已足夠，後續重構目標是降低維護成本，不是繼續增加檔案或抽象層。
 
 * `app_factory.py` 只保留 app 建立、config loading、extension 初始化與 blueprint registration；不要把 business logic 塞回 `app_factory.py`。
