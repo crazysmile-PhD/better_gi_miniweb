@@ -1,4 +1,4 @@
-"""Webhook receiver routes."""
+"""Webhook HTTP routes that validate request shape before calling services."""
 
 from flask import Blueprint, current_app, jsonify, request
 

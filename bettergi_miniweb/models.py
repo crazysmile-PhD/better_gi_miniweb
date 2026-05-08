@@ -10,7 +10,7 @@ from bettergi_miniweb.extensions import db
 
 
 class PostData(db.Model):
-    """A BetterGI webhook event persisted in SQLite."""
+    """A BetterGI webhook event persisted with the existing SQLite schema."""
 
     __tablename__ = "post_data"
 

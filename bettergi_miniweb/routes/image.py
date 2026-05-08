@@ -1,4 +1,4 @@
-"""Screenshot image routes."""
+"""Image HTTP routes for serving Base64 screenshots stored on PostData."""
 
 import base64
 import binascii

@@ -165,3 +165,15 @@ def test_app_and_main_compatibility_exports(monkeypatch, tmp_path):
     assert app_module.save_webhook_payload is save_webhook_payload
     assert main_module.Post_data is PostData
     assert main_module.save_data is save_webhook_payload
+
+
+def test_route_method_list_contains_public_api(app):
+    routes = {
+        (rule.rule, tuple(sorted(rule.methods - {"HEAD", "OPTIONS"})))
+        for rule in app.url_map.iter_rules()
+    }
+
+    assert ("/", ("GET",)) in routes
+    assert ("/", ("POST",)) in routes
+    assert ("/health", ("GET",)) in routes
+    assert ("/image/<int:image_id>", ("GET",)) in routes

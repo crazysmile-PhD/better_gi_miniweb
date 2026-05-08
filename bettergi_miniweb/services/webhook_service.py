@@ -1,4 +1,4 @@
-"""Webhook payload normalization and persistence helpers."""
+"""Service helpers for validating and persisting BetterGI webhook payloads."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ WEBHOOK_FIELDS = ("result", "timestamp", "message", "screenshot")
 
 
 def normalize_webhook_payload(payload: dict[str, Any]) -> dict[str, str | None]:
-    """Validate and normalize a BetterGI webhook payload."""
+    """Return DB-ready webhook fields or raise ValueError for invalid payloads."""
 
     event = payload.get("event")
     if not isinstance(event, str) or not event.strip():
@@ -25,7 +25,7 @@ def normalize_webhook_payload(payload: dict[str, Any]) -> dict[str, str | None]:
 
 
 def save_webhook_payload(payload: dict[str, Any]) -> PostData:
-    """Persist one BetterGI webhook payload in SQLite."""
+    """Normalize and commit one BetterGI webhook event through SQLAlchemy."""
 
     normalized = normalize_webhook_payload(payload)
     record = PostData(**normalized)

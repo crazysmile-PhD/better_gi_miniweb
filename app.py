@@ -7,8 +7,6 @@ gunicorn, gevent, ``flask run``, and older local scripts.
 
 from __future__ import annotations
 
-import os
-
 from bettergi_miniweb import (
     PostData,
     create_app,
@@ -16,6 +14,7 @@ from bettergi_miniweb import (
     normalize_webhook_payload,
     save_webhook_payload,
 )
+from bettergi_miniweb.config import get_port
 
 app = create_app()
 
@@ -29,4 +28,4 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "222")), debug=False)
+    app.run(host="0.0.0.0", port=get_port(), debug=False)

@@ -1,4 +1,4 @@
-"""Health check routes."""
+"""Health check route used by local startup and monitoring checks."""
 
 from flask import Blueprint, jsonify
 

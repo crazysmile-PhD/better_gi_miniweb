@@ -3,27 +3,23 @@
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 from typing import Any
 
 from flask import Flask
 
+from bettergi_miniweb.config import BASE_DIR, get_app_config, get_log_level
 from bettergi_miniweb.extensions import db
 from bettergi_miniweb.routes import dashboard_bp, health_bp, image_bp, webhook_bp
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_DATABASE_URI = f"sqlite:///{BASE_DIR / 'bettergi.db'}"
-
 
 def configure_logging() -> None:
-    """Configure application logging from environment variables."""
+    """Apply logging configuration before the Flask app starts handling requests."""
 
-    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    logging.basicConfig(level=get_log_level())
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
-    """Create and configure the Flask application."""
+    """Build the Flask app, apply config, initialize extensions, and register blueprints."""
 
     configure_logging()
 
@@ -33,11 +29,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         static_folder=str(BASE_DIR / "static"),
         template_folder=str(BASE_DIR / "templates"),
     )
-    app.config.from_mapping(
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", DEFAULT_DATABASE_URI),
-        SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        JSON_SORT_KEYS=False,
-    )
+    app.config.from_mapping(get_app_config())
 
     if test_config:
         app.config.update(test_config)

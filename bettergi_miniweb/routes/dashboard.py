@@ -1,4 +1,4 @@
-"""Dashboard routes."""
+"""Dashboard HTTP routes for rendering persisted BetterGI events."""
 
 from flask import Blueprint, render_template, request
 from sqlalchemy import select
