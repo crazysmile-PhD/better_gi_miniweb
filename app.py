@@ -1,15 +1,16 @@
 """Backward-compatible Flask entry point for Better GI MiniWeb.
 
-The application factory now lives in :mod:`bettergi_miniweb.app_factory`, but
-this module continues to expose the historical ``app`` object and helper imports
-for gunicorn, gevent, ``flask run``, and older local scripts.
+The application factory lives in :mod:`bettergi_miniweb.app_factory`, but this
+module continues to expose the historical ``app`` object and helper imports for
+gunicorn, gevent, ``flask run``, and older local scripts.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 
-from bettergi_miniweb.app_factory import (
+from bettergi_miniweb import (
     PostData,
     create_app,
     db,
@@ -17,6 +18,7 @@ from bettergi_miniweb.app_factory import (
     save_webhook_payload,
 )
 
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 app = create_app()
 
 __all__ = [
