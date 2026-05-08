@@ -49,11 +49,11 @@ def main() -> None:
 
     banner = f"""
 BetterGI 前端展示頁（適用於 BetterGI {BETTERGI_VERSION}）
-=================
+-----------------
 Web Dashboard: http://127.0.0.1:{PORT}/
 Webhook URL:   http://127.0.0.1:{PORT}/
 Health Check:  http://127.0.0.1:{PORT}/health
-=================
+-----------------
 """.strip()
     print(banner, flush=True)
     print("服務已啟動。按 Ctrl+C 停止。", flush=True)
