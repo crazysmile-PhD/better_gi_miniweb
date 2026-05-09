@@ -86,6 +86,9 @@ def test_python_sources_keep_normal_line_structure():
         lines = path.read_text(encoding="utf-8").splitlines()
         assert lines, f"{filename} is empty"
         assert max(len(line) for line in lines) <= 160, f"{filename} appears compressed"
+        assert not any(
+            line.startswith(("<<<<<<<", "=======", ">>>>>>>")) for line in lines
+        ), f"{filename} contains unresolved merge conflict markers"
 
     assert len(Path("app.py").read_text(encoding="utf-8").splitlines()) > 2
     assert len(Path("bettergi_miniweb/app_factory.py").read_text(encoding="utf-8").splitlines()) > 2
