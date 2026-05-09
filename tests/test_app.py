@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import importlib
+import json
+from hashlib import sha256
 import sys
 from pathlib import Path
 
@@ -122,6 +125,69 @@ def test_webhook_rejects_blank_event(client):
 
     assert response.status_code == 400
     assert response.get_json()["msg"] == "error"
+
+
+def test_webhook_accepts_configured_bearer_token(tmp_path):
+    database_path = tmp_path / "token.db"
+    flask_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "WEBHOOK_TOKEN": "secret-token",
+        }
+    )
+
+    with flask_app.test_client() as token_client:
+        rejected = token_client.post("/", json={"event": "missing-token"})
+        accepted = token_client.post(
+            "/",
+            json={"event": "with-token"},
+            headers={"Authorization": "Bearer secret-token"},
+        )
+
+    with flask_app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+    assert rejected.status_code == 401
+    assert rejected.get_json()["msg"] == "error"
+    assert accepted.status_code == 201
+
+
+def test_webhook_accepts_configured_hmac_signature(tmp_path):
+    database_path = tmp_path / "signature.db"
+    secret = "signature-secret"
+    flask_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "WEBHOOK_SIGNATURE_SECRET": secret,
+        }
+    )
+    body = json.dumps({"event": "signed"}, separators=(",", ":")).encode("utf-8")
+    signature = "sha256=" + hmac.new(secret.encode("utf-8"), body, sha256).hexdigest()
+
+    with flask_app.test_client() as signature_client:
+        rejected = signature_client.post(
+            "/",
+            data=body,
+            content_type="application/json",
+            headers={"X-Webhook-Signature": "sha256=bad"},
+        )
+        accepted = signature_client.post(
+            "/",
+            data=body,
+            content_type="application/json",
+            headers={"X-Webhook-Signature": signature},
+        )
+
+    with flask_app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+    assert rejected.status_code == 401
+    assert rejected.get_json()["msg"] == "error"
+    assert accepted.status_code == 201
 
 
 def test_webhook_persists_valid_payload(client, app):
