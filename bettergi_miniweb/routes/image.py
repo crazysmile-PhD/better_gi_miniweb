@@ -20,7 +20,7 @@ def serve_image(image_id: int):
 
     try:
         binary_data = base64.b64decode(post.screenshot, validate=True)
-    except binascii.Error, ValueError:
+    except (binascii.Error, ValueError):
         current_app.logger.warning("Invalid screenshot data for post %s", image_id)
         return "Invalid image data", 422
 

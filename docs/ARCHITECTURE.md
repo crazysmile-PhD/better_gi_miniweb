@@ -8,7 +8,6 @@ Better GI MiniWeb 是一個輕量級 Flask 應用，用來接收 BetterGI Webhoo
 
 本專案是小型 Flask 工具，不採用大型 enterprise architecture。重構目標是降低維護成本與修改風險，而不是把檔案拆得越細越好；目前 package 邊界已足夠，除非有明確需求，否則不要再新增抽象層。
 
-
 ## Over-splitting audit 結論
 
 目前架構先維持現狀，不再繼續拆分：
