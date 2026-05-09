@@ -130,7 +130,7 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-## 啟動方式
+## 快速啟動
 
 安裝依賴後執行：
 
@@ -144,13 +144,26 @@ python run.py
 * Webhook URL：<http://127.0.0.1:222/>
 * Health Check：<http://127.0.0.1:222/health>
 
-如需改 port：
+`run.py` 會在啟動時檢查 Python 版本與 runtime dependencies，並在 Flask application context 內安全執行 `db.create_all()` 建立缺少的 SQLite tables。
+
+## 環境變數
+
+| 變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `HOST` | `0.0.0.0` | gevent WSGI server 綁定的 host。 |
+| `PORT` | `222` | Dashboard、Webhook 與 health check 使用的 port。 |
+| `DATABASE_URL` | `sqlite:///bettergi.db` | SQLAlchemy database URI；預設資料庫位於專案根目錄。 |
+| `LOG_LEVEL` | `INFO` | Flask app logging level。 |
+| `WEBHOOK_TOKEN` | 未設定 | 選填的 Webhook bearer token；設定後 `POST /` 必須帶 `Authorization: Bearer <token>` 或 `X-Webhook-Token: <token>`。 |
+| `WEBHOOK_SIGNATURE_SECRET` | 未設定 | 選填的 HMAC-SHA256 簽章密鑰；設定後 `POST /` 必須帶 `X-Webhook-Signature: sha256=<hex digest>`。 |
+
+macOS / Linux 修改 port 範例：
 
 ```bash
 PORT=8080 python run.py
 ```
 
-Windows PowerShell：
+Windows PowerShell 修改 port 範例：
 
 ```powershell
 $env:PORT = "8080"
@@ -166,6 +179,17 @@ curl -X POST http://127.0.0.1:222/ \
   -H "Content-Type: application/json" \
   -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
+
+若已設定 `WEBHOOK_TOKEN`，請加入 bearer token：
+
+```bash
+curl -X POST http://127.0.0.1:222/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WEBHOOK_TOKEN" \
+  -d '{"event":"notification","message":"hello from BetterGI"}'
+```
+
+若已設定 `WEBHOOK_SIGNATURE_SECRET`，需用原始 request body 計算 HMAC-SHA256，並送出 `X-Webhook-Signature: sha256=<hex digest>`。
 
 完整範例：
 
@@ -232,15 +256,23 @@ test ! -e bettergi.db
 
 ## 驗證方式
 
+首次設定測試工具：
+
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install pytest ruff
-python -m compileall .
+```
+
+每次提交前建議執行：
+
+```bash
 ruff check .
 pytest
 git diff --check
 test ! -e bettergi.db
 ```
+
+測試應使用 temporary SQLite，不應污染專案根目錄的 `bettergi.db`；如果手動啟動後產生 `bettergi.db`，請在提交前移除。
 
 手動啟動驗證：
 
@@ -248,7 +280,7 @@ test ! -e bettergi.db
 2. 開啟 <http://127.0.0.1:222/health>，應回傳 `{"status":"ok"}`。
 3. 用 README 的 `curl` 範例送出 Webhook。
 4. 開啟 <http://127.0.0.1:222/>，應看得到新事件。
-5. 檢查專案根目錄是否建立 `bettergi.db`。
+5. 確認專案根目錄已建立 `bettergi.db`；手動驗證結束且不需保留資料時可刪除。
 
 ## 常見問題
 
@@ -295,11 +327,7 @@ python -m pip install -r requirements.txt
 4. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
 5. 增加更多 pytest 測試與端到端啟動測試。
 
-目前不建議新增 repository layer 或其他 enterprise-style 抽象層；現有 `routes/`、`services/`、`models.py` 邊界已足夠。
-
-## 相容性與破壞性變更說明
-
-目前 public API route 維持：`POST /`、`GET /`、`GET /health`、`GET /image/<int:image_id>`。
+以上項目應拆成獨立 PR；不要把 security、migration、file storage 或 Dashboard 功能混在同一次變更。
 
 已知相容性注意事項：
 
