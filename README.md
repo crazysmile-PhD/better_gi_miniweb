@@ -187,7 +187,6 @@ curl -X POST http://127.0.0.1:222/ \
 * `message`：選填，顯示在 Dashboard 的訊息。
 * `screenshot`：選填，Base64 PNG 字串。
 
-
 ## For Developers
 
 更完整的架構與維護規則請先閱讀 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。該文件說明 request flow、模組責任邊界、新增 route/service 的步驟、model/config 修改注意事項、測試規則與 PR checklist。
@@ -203,6 +202,7 @@ python -m pip install pytest ruff
 ### 執行測試與檢查
 
 ```bash
+python -m compileall .
 ruff check .
 pytest
 git diff --check
@@ -216,8 +216,6 @@ test ! -e bettergi.db
 * `bettergi_miniweb.app_factory.create_app()`：主要 application factory，負責建立 Flask app、載入 config、初始化 extensions 並註冊 blueprints。
 * `app.py`：相容 WSGI / Flask CLI / `python app.py` 的入口，仍匯出 `app`、`create_app`、`db`、`PostData` 與 webhook service helpers。
 * `main.py`：舊入口相容層，保留 `from main import app`、`Post_data`、`save_data` 等歷史用法；未確認舊依賴前不要刪除。
-
-### 目前架構拆分原則
 
 ### 目前架構拆分原則
 
@@ -237,8 +235,11 @@ test ! -e bettergi.db
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install pytest ruff
+python -m compileall .
 ruff check .
 pytest
+git diff --check
+test ! -e bettergi.db
 ```
 
 手動啟動驗證：
@@ -286,16 +287,23 @@ python -m pip install -r requirements.txt
 
 ## 後續建議重構方向
 
+後續改動請維持小 PR、單一目的，不要把 security、migration、file storage 或大型 UI 調整混在同一個 PR。
+
 1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
 2. 新增 Webhook token / HMAC signature 驗證。
-3. 拆分 Blueprint、service layer、repository layer，降低路由與資料庫耦合。
-4. 導入 Alembic migration 管理資料庫 schema。
-5. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
-6. 增加更多 pytest 測試與端到端啟動測試。
+3. 導入 Alembic migration 管理資料庫 schema。
+4. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
+5. 增加更多 pytest 測試與端到端啟動測試。
 
-## 破壞性變更說明
+目前不建議新增 repository layer 或其他 enterprise-style 抽象層；現有 `routes/`、`services/`、`models.py` 邊界已足夠。
 
-* `POST /` 現在要求 `Content-Type: application/json`，且 body 必須是 JSON object。
-* `event` 欄位現在為必填非空字串；缺少時會回傳 HTTP 400。
-* 啟動器不再自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
-* 首次啟動不再建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
+## 相容性與破壞性變更說明
+
+目前 public API route 維持：`POST /`、`GET /`、`GET /health`、`GET /image/<int:image_id>`。
+
+已知相容性注意事項：
+
+* `POST /` 要求 `Content-Type: application/json`，且 body 必須是 JSON object。
+* `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
+* 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
+* 首次啟動不建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
