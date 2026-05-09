@@ -154,6 +154,8 @@ python run.py
 | `PORT` | `222` | Dashboard、Webhook 與 health check 使用的 port。 |
 | `DATABASE_URL` | `sqlite:///bettergi.db` | SQLAlchemy database URI；預設資料庫位於專案根目錄。 |
 | `LOG_LEVEL` | `INFO` | Flask app logging level。 |
+| `WEBHOOK_TOKEN` | 未設定 | 選填的 Webhook bearer token；設定後 `POST /` 必須帶 `Authorization: Bearer <token>` 或 `X-Webhook-Token: <token>`。 |
+| `WEBHOOK_SIGNATURE_SECRET` | 未設定 | 選填的 HMAC-SHA256 簽章密鑰；設定後 `POST /` 必須帶 `X-Webhook-Signature: sha256=<hex digest>`。 |
 
 macOS / Linux 修改 port 範例：
 
@@ -177,6 +179,17 @@ curl -X POST http://127.0.0.1:222/ \
   -H "Content-Type: application/json" \
   -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
+
+若已設定 `WEBHOOK_TOKEN`，請加入 bearer token：
+
+```bash
+curl -X POST http://127.0.0.1:222/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WEBHOOK_TOKEN" \
+  -d '{"event":"notification","message":"hello from BetterGI"}'
+```
+
+若已設定 `WEBHOOK_SIGNATURE_SECRET`，需用原始 request body 計算 HMAC-SHA256，並送出 `X-Webhook-Signature: sha256=<hex digest>`。
 
 完整範例：
 
