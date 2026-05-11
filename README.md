@@ -167,7 +167,16 @@ curl -X POST http://127.0.0.1:222/ \
   -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
 
-如果設定 `WEBHOOK_TOKEN`，請在請求中提供 `Authorization: Bearer <token>` 或 `X-Webhook-Token`。如果設定 `WEBHOOK_SIGNATURE_SECRET`，請在 `X-Webhook-Signature` 提供 raw request body 的 HMAC-SHA256，格式為 `sha256=<hex digest>`。
+若已設定 `WEBHOOK_TOKEN`，請加入 bearer token：
+
+```bash
+curl -X POST http://127.0.0.1:222/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WEBHOOK_TOKEN" \
+  -d '{"event":"notification","message":"hello from BetterGI"}'
+```
+
+若已設定 `WEBHOOK_SIGNATURE_SECRET`，需用原始 request body 計算 HMAC-SHA256，並送出 `X-Webhook-Signature: sha256=<hex digest>`。
 
 完整範例：
 
@@ -290,10 +299,11 @@ python -m pip install -r requirements.txt
 
 1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
 2. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
-3. 拆分 Blueprint、service layer、repository layer，降低路由與資料庫耦合。
-4. 導入 Alembic migration 管理資料庫 schema。
-5. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
-6. 增加更多 pytest 測試與端到端啟動測試。
+3. 導入 Alembic migration 管理資料庫 schema。
+4. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
+5. 增加更多 pytest 測試與端到端啟動測試。
+
+以上項目應拆成獨立 PR；不要把 security、migration、file storage 或 Dashboard 功能混在同一次變更。
 
 ## 破壞性變更說明
 
