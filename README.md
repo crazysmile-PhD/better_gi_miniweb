@@ -180,6 +180,17 @@ curl -X POST http://127.0.0.1:222/ \
   -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
 
+若已設定 `WEBHOOK_TOKEN`，請加入 bearer token：
+
+```bash
+curl -X POST http://127.0.0.1:222/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WEBHOOK_TOKEN" \
+  -d '{"event":"notification","message":"hello from BetterGI"}'
+```
+
+若已設定 `WEBHOOK_SIGNATURE_SECRET`，需用原始 request body 計算 HMAC-SHA256，並送出 `X-Webhook-Signature: sha256=<hex digest>`。
+
 完整範例：
 
 ```json
@@ -218,6 +229,7 @@ python -m pip install pytest ruff
 ### 執行測試與檢查
 
 ```bash
+python -m compileall .
 ruff check .
 pytest
 git diff --check
@@ -310,6 +322,8 @@ python -m pip install -r requirements.txt
 
 ## 後續建議重構方向
 
+後續改動請維持小 PR、單一目的，不要把 security、migration、file storage 或大型 UI 調整混在同一個 PR。
+
 1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
 2. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
 3. 導入 Alembic migration 管理資料庫 schema。
@@ -318,9 +332,9 @@ python -m pip install -r requirements.txt
 
 以上項目應拆成獨立 PR；不要把 security、migration、file storage 或 Dashboard 功能混在同一次變更。
 
-## 破壞性變更說明
+已知相容性注意事項：
 
-* `POST /` 現在要求 `Content-Type: application/json`，且 body 必須是 JSON object。
-* `event` 欄位現在為必填非空字串；缺少時會回傳 HTTP 400。
-* 啟動器不再自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
-* 首次啟動不再建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
+* `POST /` 要求 `Content-Type: application/json`，且 body 必須是 JSON object。
+* `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
+* 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
+* 首次啟動不建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
