@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import importlib
+import json
+from hashlib import sha256
 import sys
 from pathlib import Path
 
@@ -142,6 +145,48 @@ def test_webhook_persists_valid_payload(client, app):
         assert post.result == "success"
         assert post.timestamp == "2026-05-07T00:00:00Z"
         assert post.message == "Hello\nDetails"
+
+
+def test_webhook_accepts_configured_bearer_token(client, app):
+    app.config["WEBHOOK_TOKEN"] = "secret-token"
+    payload = {"event": "notification", "message": "protected"}
+
+    missing_token_response = client.post("/", json=payload)
+
+    assert missing_token_response.status_code == 401
+
+    valid_token_response = client.post(
+        "/",
+        json=payload,
+        headers={"Authorization": "bearer secret-token"},
+    )
+
+    assert valid_token_response.status_code == 201
+
+
+def test_webhook_accepts_configured_hmac_signature(client, app):
+    app.config["WEBHOOK_SIGNATURE_SECRET"] = "signature-secret"
+    payload = {"event": "notification", "message": "signed"}
+    raw_body = json.dumps(payload).encode("utf-8")
+    digest = hmac.new(b"signature-secret", raw_body, sha256).hexdigest()
+
+    bad_signature_response = client.post(
+        "/",
+        data=raw_body,
+        content_type="application/json",
+        headers={"X-Webhook-Signature": "sha256=bad"},
+    )
+
+    assert bad_signature_response.status_code == 401
+
+    valid_signature_response = client.post(
+        "/",
+        data=raw_body,
+        content_type="application/json",
+        headers={"X-Webhook-Signature": f"sha256={digest}"},
+    )
+
+    assert valid_signature_response.status_code == 201
 
 
 def test_dashboard_page_renders(client):
