@@ -2,7 +2,7 @@
 
 Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI 的 Webhook 通知、結果、時間戳與 Base64 截圖，並將資料寫入 SQLite，再透過瀏覽器 Dashboard 顯示最新事件。
 
-本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：使用者只需要準備目前最新穩定版 Python，建立單一虛擬環境後即可安裝與啟動。
+本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：本分支目前以 Python 3.14 為目標版本；若後續希望支援更多使用者環境，可以再評估放寬到 Python 3.12 或 3.13。
 
 ## 專案用途
 
@@ -16,10 +16,10 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 
 | 類別 | 版本策略 |
 | --- | --- |
-| Python | `>=3.14,<3.15`，以目前最新穩定版 Python 3.14 為目標 |
+| Python | `>=3.14,<3.15`，本分支目前以 Python 3.14 為目標 |
 | Flask | `>=3.1.3,<3.2` |
 | Flask-SQLAlchemy | `>=3.1.1,<3.2` |
-| SQLAlchemy | `>=2.0.49,<2.1`，使用 SQLAlchemy 2.x 查詢與 Session API |
+| SQLAlchemy | `>=2.0.49,<2.1` |
 | gevent | `>=26.4.0,<27.0` |
 | Werkzeug | `>=3.1.8,<3.2` |
 | Jinja2 | `>=3.1.6,<3.2` |
@@ -150,12 +150,16 @@ python run.py
 
 | 變數 | 預設值 | 說明 |
 | --- | --- | --- |
-| `HOST` | `0.0.0.0` | gevent WSGI server 綁定的 host。 |
-| `PORT` | `222` | Dashboard、Webhook 與 health check 使用的 port。 |
-| `DATABASE_URL` | `sqlite:///bettergi.db` | SQLAlchemy database URI；預設資料庫位於專案根目錄。 |
-| `LOG_LEVEL` | `INFO` | Flask app logging level。 |
-| `WEBHOOK_TOKEN` | 未設定 | 選填的 Webhook bearer token；設定後 `POST /` 必須帶 `Authorization: Bearer <token>` 或 `X-Webhook-Token: <token>`。 |
-| `WEBHOOK_SIGNATURE_SECRET` | 未設定 | 選填的 HMAC-SHA256 簽章密鑰；設定後 `POST /` 必須帶 `X-Webhook-Signature: sha256=<hex digest>`。 |
+| `HOST` | `0.0.0.0` | gevent WSGI server 綁定的 host |
+| `PORT` | `222` | Dashboard、Webhook、health check 使用的 port |
+| `DATABASE_URL` | `sqlite:///bettergi.db` | SQLAlchemy database URI |
+| `LOG_LEVEL` | `INFO` | Flask app logging level |
+| `WEBHOOK_TOKEN` | 未設定 | 選填 bearer token |
+| `WEBHOOK_SIGNATURE_SECRET` | 未設定 | 選填 HMAC-SHA256 簽章密鑰 |
+
+`WEBHOOK_TOKEN` 設定後，`POST /` 必須帶 `Authorization: Bearer <token>` 或 `X-Webhook-Token: <token>`。
+
+`WEBHOOK_SIGNATURE_SECRET` 設定後，`POST /` 必須帶 `X-Webhook-Signature: sha256=<hex digest>`。
 
 macOS / Linux 修改 port 範例：
 
@@ -189,7 +193,11 @@ curl -X POST http://127.0.0.1:222/ \
   -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
 
-若已設定 `WEBHOOK_SIGNATURE_SECRET`，需用原始 request body 計算 HMAC-SHA256，並送出 `X-Webhook-Signature: sha256=<hex digest>`。
+若已設定 `WEBHOOK_SIGNATURE_SECRET`，需用原始 request body 計算 HMAC-SHA256，並送出：
+
+```text
+X-Webhook-Signature: sha256=<hex digest>
+```
 
 完整範例：
 
@@ -213,7 +221,9 @@ curl -X POST http://127.0.0.1:222/ \
 
 ## For Developers
 
-更完整的架構與維護規則請先閱讀 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。該文件說明 request flow、模組責任邊界、新增 route/service 的步驟、model/config 修改注意事項、測試規則與 PR checklist。
+更完整的架構與維護規則請先閱讀 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+
+該文件說明 request flow、模組責任邊界、新增 route/service 的步驟、model/config 修改注意事項、測試規則與 PR checklist。
 
 ### 安裝開發依賴
 
@@ -286,7 +296,7 @@ test ! -e bettergi.db
 
 ### 啟動時顯示 Python 版本太舊
 
-請安裝目前最新穩定版 Python，重新建立 `.venv`，再執行：
+請安裝本分支目前支援的 Python 3.14，重新建立 `.venv`，再執行：
 
 ```bash
 python -m pip install --upgrade pip
@@ -303,7 +313,9 @@ python -m pip install -r requirements.txt
 
 ### Dashboard 沒有資料
 
-請確認 BetterGI Webhook URL 指向 `http://127.0.0.1:222/`，且用 `POST` 傳送 JSON。也可以先使用 README 的 `curl` 範例確認服務是否正常。
+請確認 BetterGI Webhook URL 指向 `http://127.0.0.1:222/`，且用 `POST` 傳送 JSON。
+
+也可以先使用 README 的 `curl` 範例確認服務是否正常。
 
 ### `/image/<int:image_id>` 回傳 Invalid image data
 
@@ -312,7 +324,7 @@ python -m pip install -r requirements.txt
 ## 已知技術債
 
 * 截圖仍以 Base64 文字保存於 SQLite，資料量大時會造成資料庫膨脹。
-* Webhook 尚未加入 token、signature 或來源驗證，公開到外網前應補上驗證機制。
+* Webhook 已支援選填 token 與 HMAC-SHA256 signature 驗證；若公開到外網，仍建議搭配 HTTPS、反向代理、來源限制與 rate limit。
 * 目前 Dashboard 無分頁、搜尋、篩選與即時更新。
 * 尚未導入 Alembic migration；資料模型調整仍依賴 `db.create_all()`。
 * 前端仍是單一 Jinja2 template，尚未 component 化。
@@ -322,15 +334,19 @@ python -m pip install -r requirements.txt
 後續改動請維持小 PR、單一目的，不要把 security、migration、file storage 或大型 UI 調整混在同一個 PR。
 
 1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
-2. 新增 Webhook token / HMAC signature 驗證。
+2. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
 3. 導入 Alembic migration 管理資料庫 schema。
 4. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
 5. 增加更多 pytest 測試與端到端啟動測試。
 
 以上項目應拆成獨立 PR；不要把 security、migration、file storage 或 Dashboard 功能混在同一次變更。
 
-已知相容性注意事項：
+## 已知相容性注意事項
 
+* `POST /` 要求 `Content-Type: application/json`，且 body 必須是 JSON object。
+* `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
+* 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
+* 首次啟動不建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
 * `POST /` 要求 `Content-Type: application/json`，且 body 必須是 JSON object。
 * `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
 * 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
