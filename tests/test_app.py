@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import base64
+import sqlite3
 import hmac
 import importlib
 import json
 from hashlib import sha256
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
+from alembic import command
+from alembic.config import Config
 
 from bettergi_miniweb import PostData, create_app, db, save_webhook_payload
 
@@ -50,6 +54,7 @@ def app(tmp_path):
         {
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "SCREENSHOT_STORAGE_DIR": str(tmp_path / "screenshots"),
         }
     )
 
@@ -89,9 +94,10 @@ def test_python_sources_keep_normal_line_structure():
         lines = path.read_text(encoding="utf-8").splitlines()
         assert lines, f"{filename} is empty"
         assert max(len(line) for line in lines) <= 160, f"{filename} appears compressed"
-        assert not any(
-            line.startswith(("<<<<<<<", "=======", ">>>>>>>")) for line in lines
-        ), f"{filename} contains unresolved merge conflict markers"
+        conflict_markers = tuple(marker * 7 for marker in ("<", "=", ">"))
+        assert not any(line.startswith(conflict_markers) for line in lines), (
+            f"{filename} contains unresolved merge conflict markers"
+        )
 
     assert len(Path("app.py").read_text(encoding="utf-8").splitlines()) > 2
     assert len(Path("bettergi_miniweb/app_factory.py").read_text(encoding="utf-8").splitlines()) > 2
@@ -243,16 +249,119 @@ def test_image_endpoint_returns_422_for_invalid_base64(client):
     assert response.status_code == 422
 
 
-def test_image_endpoint_serves_base64_png(client, transparent_png_base64):
+def test_image_endpoint_serves_file_backed_png(client, app, transparent_png_base64):
     post_id = post_payload(
         client,
         {"event": "screenshot", "screenshot": transparent_png_base64},
     )
 
+    with app.app_context():
+        post = db.session.get(PostData, post_id)
+        assert post is not None
+        assert post.screenshot is None
+        assert post.screenshot_path == f"post_{post_id}.png"
+        screenshot_file = Path(app.config["SCREENSHOT_STORAGE_DIR"]) / post.screenshot_path
+        assert screenshot_file.is_file()
+
     response = client.get(f"/image/{post_id}")
 
     assert response.status_code == 200
     assert response.mimetype == "image/png"
+
+
+def test_image_endpoint_serves_legacy_base64_png(client, app, transparent_png_base64):
+    with app.app_context():
+        legacy_post = PostData(event="legacy-screenshot", screenshot=transparent_png_base64)
+        db.session.add(legacy_post)
+        db.session.commit()
+        post_id = legacy_post.id
+
+    response = client.get(f"/image/{post_id}")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+
+
+def test_image_endpoint_rejects_unsafe_screenshot_path(client, app):
+    with app.app_context():
+        unsafe_post = PostData(event="unsafe-screenshot", screenshot_path="../secret.png")
+        db.session.add(unsafe_post)
+        db.session.commit()
+        post_id = unsafe_post.id
+
+    response = client.get(f"/image/{post_id}")
+
+    assert response.status_code == 404
+
+
+def test_alembic_migrations_create_post_data_schema(monkeypatch, tmp_path):
+    database_path = tmp_path / "alembic.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    monkeypatch.setenv("SCREENSHOT_STORAGE_DIR", str(tmp_path / "migration-screenshots"))
+    alembic_config = Config("alembic.ini")
+
+    command.upgrade(alembic_config, "head")
+
+    with sqlite3.connect(database_path) as connection:
+        columns = [row[1] for row in connection.execute("pragma table_info(post_data)")]
+
+    assert columns == [
+        "id",
+        "event",
+        "result",
+        "timestamp",
+        "screenshot",
+        "create_time",
+        "message",
+        "screenshot_path",
+    ]
+
+
+def test_dashboard_supports_pagination_search_result_and_date_filters(client, app):
+    with app.app_context():
+        for index in range(12):
+            result = "success" if index % 2 == 0 else "failure"
+            post = PostData(
+                event=f"event-{index}",
+                result=result,
+                message=f"message-{index}",
+                create_time=datetime(2026, 5, index + 1, tzinfo=timezone.utc),
+            )
+            db.session.add(post)
+        db.session.commit()
+
+    page_response = client.get("/?page=2&per_page=5")
+    search_response = client.get("/?q=message-11")
+    result_response = client.get("/?result=success&per_page=20")
+    date_response = client.get("/?date_from=2026-05-10&date_to=2026-05-12")
+
+    page_text = page_response.get_data(as_text=True)
+    search_text = search_response.get_data(as_text=True)
+    result_text = result_response.get_data(as_text=True)
+    date_text = date_response.get_data(as_text=True)
+
+    assert page_response.status_code == 200
+    assert "第 2 / 3 頁" in page_text
+    assert "message-6" in page_text
+    assert search_response.status_code == 200
+    assert "message-11" in search_text
+    assert "message-10" not in search_text
+    assert result_response.status_code == 200
+    assert "结果：success" in result_text
+    assert "结果：failure" not in result_text
+    assert date_response.status_code == 200
+    assert "message-11" in date_text
+    assert "message-9" in date_text
+    assert "message-8" not in date_text
+
+
+def test_dashboard_reports_invalid_date_and_renders_refresh_meta(client):
+    response = client.get("/?date_from=not-a-date&refresh=30")
+    text = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "date_from must use YYYY-MM-DD format" in text
+    assert '<meta http-equiv="refresh" content="30">' in text
 
 
 def test_app_and_main_compatibility_exports(monkeypatch, tmp_path):

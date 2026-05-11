@@ -1,115 +1,170 @@
 # Better GI MiniWeb Architecture
 
-## 專案目的
+本文件說明 Better GI MiniWeb 的 request flow、screenshot storage flow、migration policy、Dashboard query / pagination flow、template structure 與維護規則。
 
-Better GI MiniWeb 是一個輕量級 Flask 應用，用來接收 BetterGI Webhook 事件，將事件資料寫入本機 SQLite，並透過簡單 Dashboard 顯示最近事件與 Base64 PNG 截圖。
+## 高層架構
 
-目前的重構目標是逐步把原本集中在 `main.py`、`init_database.py`、`run.py` 等入口與工具檔中的程式碼拆成可維護的 package 結構，同時保持既有 API 與舊入口相容。
+```text
+BetterGI
+  │ POST /
+  ▼
+bettergi_miniweb/routes/webhook.py
+  │ validate JSON / optional token / optional HMAC signature
+  ▼
+bettergi_miniweb/services/webhook_service.py
+  │ normalize payload
+  │ decode and persist screenshot files when present
+  ▼
+bettergi_miniweb/models.py + SQLite
+  │ event metadata + screenshot_path / legacy screenshot
+  ▼
+GET / dashboard and GET /image/<id>
+```
 
-本專案是小型 Flask 工具，不採用大型 enterprise architecture。重構目標是降低維護成本與修改風險，而不是把檔案拆得越細越好；目前 package 邊界已足夠，除非有明確需求，否則不要再新增抽象層。
-
-## Over-splitting audit 結論
-
-目前架構先維持現狀，不再繼續拆分：
-
-* `app_factory.py` 只負責組裝 Flask app。
-* `config.py` 只負責設定與環境變數。
-* `extensions.py` 保留 `db` extension instance。
-* `models.py` 保留 `PostData` schema。
-* `routes/` 保留 HTTP request / response。
-* `services/` 保留資料驗證、正規化與 DB 寫入。
-* `app.py` / `main.py` 保留相容入口。
-
-`routes/health.py`、`extensions.py`、`routes/__init__.py`、`services/__init__.py` 雖然偏薄，但目前可接受：它們有清楚 package / endpoint / extension 邊界，不要只為了減少檔案數而合併。
-
-只有在兩個檔案同時符合以下條件時，才允許合併：
-
-1. 永遠一起修改。
-2. 沒有不同依賴。
-3. 沒有不同測試需求。
-4. 合併後責任仍清楚。
-5. 合併不會破壞 public API 或測試。
-
-除非有明確需求，否則不要新增：
-
-* `repositories/`
-* `domain/`
-* `use_cases/`
-* `interfaces/`
-* `adapters/`
-* `schemas/`
-* `dto/`
-* `managers/`
-* generic helpers
-* plugin system
-* API versioning
-
-## Request flow
-
-### Webhook 寫入流程：`POST /`
-
-1. Flask app 由 `bettergi_miniweb.app_factory.create_app()` 建立。
-2. `create_app()` 初始化 config、logging、SQLAlchemy，並註冊 blueprints。
-3. `bettergi_miniweb.routes.webhook.webhook()` 接收 `POST /`。
-4. Route 先讀取 raw request body，供 HMAC-SHA256 signature 驗證使用。
-5. 若設定 `WEBHOOK_TOKEN` 或 `WEBHOOK_SIGNATURE_SECRET`，Route 會先執行 Webhook auth；驗證失敗回傳 HTTP 401。
-6. Auth 通過後，Route 才檢查 request 是否為 JSON object。
-7. Route 呼叫 `bettergi_miniweb.services.webhook_service.save_webhook_payload()`。
-8. Service 執行 payload normalization 與必要欄位驗證。
-9. Service 建立 `PostData` model 並透過 shared `db.session` 寫入 SQLite。
-10. Route 回傳 `201` 與 `{ "msg": "OK", "id": ... }`。
-
-### Dashboard 讀取流程：`GET /`
-
-1. `bettergi_miniweb.routes.dashboard.page()` 查詢最近 10 筆 `PostData`。
-2. Route 將資料傳給 `templates/base.html`。
-3. Template 負責渲染 Dashboard；目前沒有 frontend build pipeline。
-
-### 圖片讀取流程：`GET /image/<int:image_id>`
-
-1. `bettergi_miniweb.routes.image.serve_image()` 用 `image_id` 查詢 `PostData`。
-2. 若該筆資料不存在或沒有 screenshot，回傳 `404`。
-3. 若 screenshot 不是合法 Base64，回傳 `422`。
-4. 若合法，將 Base64 decode 成 binary 並以 `image/png` 回傳。
-
-## Public API routes
-
-目前必須保持相容的 public routes：
-
-| Method | Route | 說明 |
-| --- | --- | --- |
-| `POST` | `/` | 接收 BetterGI Webhook JSON payload。 |
-| `GET` | `/` | 顯示 Dashboard。 |
-| `GET` | `/health` | 健康檢查，回傳 `{ "status": "ok" }`。 |
-| `GET` | `/image/<int:image_id>` | 讀取指定事件的 Base64 PNG 截圖。 |
-
-## 目錄結構說明
+## 檔案結構
 
 ```text
 better_gi_miniweb/
-├── app.py                         # WSGI / Flask CLI / python app.py 相容入口
-├── main.py                        # 舊版 from main import app 相容層
-├── run.py                         # gevent 啟動器
-├── init_database.py               # SQLite 初始化與 post_load 匯入工具
+├── alembic.ini
+├── app.py
 ├── bettergi_miniweb/
-│   ├── __init__.py                # package public exports
-│   ├── app_factory.py             # create_app、logging、blueprint registration
-│   ├── config.py                  # 環境變數與基本 Flask config mapping
-│   ├── extensions.py              # Flask extension instances
-│   ├── models.py                  # SQLAlchemy models
-│   ├── routes/                    # HTTP route blueprints
-│   │   ├── dashboard.py           # GET /
-│   │   ├── health.py              # GET /health
-│   │   ├── image.py               # GET /image/<int:image_id>
-│   │   └── webhook.py             # POST /
-│   └── services/                  # 可測試的 business/application logic
-│       └── webhook_service.py     # Webhook payload validation and persistence
-├── docs/
-│   └── ARCHITECTURE.md            # 開發者架構說明
-├── static/                        # Dashboard static assets
-├── templates/                     # Jinja2 templates
-└── tests/                         # pytest test suite
+│   ├── app_factory.py              # create_app、config loading、extension setup、blueprint registration
+│   ├── config.py                   # DATABASE_URL、LOG_LEVEL、PORT、WEBHOOK_*、SCREENSHOT_STORAGE_DIR
+│   ├── extensions.py               # db = SQLAlchemy()
+│   ├── models.py                   # PostData model
+│   ├── routes/
+│   │   ├── dashboard.py            # GET / with query, pagination, filters, refresh
+│   │   ├── health.py               # GET /health
+│   │   ├── image.py                # GET /image/<int:image_id>
+│   │   └── webhook.py              # POST /
+│   └── services/
+│       └── webhook_service.py      # payload normalization, screenshot path safety, persistence
+├── migrations/
+│   ├── env.py                      # Alembic environment using Flask config without create_all fallback
+│   └── versions/                   # schema revisions
+├── static/                         # Dashboard static assets
+├── templates/
+│   ├── base.html                   # shared skeleton
+│   ├── dashboard.html              # Dashboard page
+│   └── partials/
+│       ├── event_card.html
+│       ├── filter_form.html
+│       └── pagination.html
+└── tests/                          # pytest test suite
 ```
+
+## Request flow
+
+### `POST /` webhook flow
+
+1. `bettergi_miniweb/routes/webhook.py` reads the raw request body.
+2. If `WEBHOOK_TOKEN` is configured, the route accepts either `Authorization: Bearer <token>` or `X-Webhook-Token`.
+3. If `WEBHOOK_SIGNATURE_SECRET` is configured, the route verifies `X-Webhook-Signature: sha256=<hex digest>` against the raw body.
+4. The route rejects non-JSON requests and JSON values that are not objects.
+5. The route calls `save_webhook_payload(payload)`.
+6. `bettergi_miniweb/services/webhook_service.py` validates that `event` is a non-empty string, normalizes optional fields, persists metadata, and stores valid screenshots as files.
+7. On success, the route returns HTTP 201 with the saved row id.
+
+### `GET /` dashboard flow
+
+1. `bettergi_miniweb/routes/dashboard.py` parses query parameters.
+2. The route builds a SQLAlchemy `select(PostData)` statement.
+3. Optional filters are applied for search, `result`, and create-time date range.
+4. A count query computes total rows.
+5. The data query orders by `PostData.create_time.desc()`, applies `limit` and `offset`, and renders `templates/dashboard.html`.
+6. `templates/dashboard.html` uses partials for the filter form, event cards, and pagination links.
+
+### `GET /image/<int:image_id>` image flow
+
+1. `bettergi_miniweb/routes/image.py` loads `PostData` by id.
+2. If `screenshot_path` is present and resolves safely inside `SCREENSHOT_STORAGE_DIR`, the route serves that file.
+3. If no file-backed screenshot exists, the route falls back to the legacy Base64 `screenshot` column.
+4. Missing images return HTTP 404.
+5. Invalid legacy Base64 returns HTTP 422.
+
+## Screenshot storage flow
+
+New screenshot storage is file-backed:
+
+```text
+Webhook payload screenshot (Base64)
+  │
+  ▼
+base64.b64decode(..., validate=True)
+  │
+  ▼
+SCREENSHOT_STORAGE_DIR/post_<id>.png
+  │
+  ▼
+post_data.screenshot_path = "post_<id>.png"
+post_data.screenshot = NULL
+```
+
+Rules:
+
+* `SCREENSHOT_STORAGE_DIR` defaults to `instance/screenshots/` and may be overridden by environment variable or test config.
+* New valid screenshots are decoded and written to files; SQLite only stores the safe relative path.
+* The legacy `screenshot` column remains for backward compatibility with existing SQLite databases.
+* `/image/<id>` always prefers `screenshot_path` and only falls back to `screenshot` if no readable file-backed image exists.
+* Screenshot paths are resolved under the configured storage root; unsafe paths that would escape the root are rejected.
+* Runtime screenshot files are ignored by git and must not be committed.
+
+## Migration policy
+
+Alembic is the source of truth for schema changes.
+
+Current revisions:
+
+* `202605110001_baseline_post_data.py` creates the baseline `post_data` table.
+* `202605110002_add_screenshot_path.py` adds `post_data.screenshot_path` for file-backed screenshots.
+
+Operational commands:
+
+```bash
+python -m alembic upgrade head
+DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic upgrade head
+```
+
+Policy for future model changes:
+
+1. Update `bettergi_miniweb/models.py`.
+2. Add a new Alembic revision under `migrations/versions/`.
+3. Verify the revision on an empty temporary database and, when relevant, on a copy of an existing database.
+4. Keep `db.create_all()` only as a lightweight fallback for empty local SQLite startup; do not rely on it for formal schema upgrades.
+5. Document migration behavior in README and this architecture document.
+
+`migrations/env.py` creates the Flask app with `SKIP_CREATE_ALL=True` so Alembic can migrate an empty database without `create_app()` pre-creating tables.
+
+## Dashboard query / pagination flow
+
+Supported query parameters:
+
+| Parameter | Behavior |
+| --- | --- |
+| `page` | 1-based page number; invalid values fall back to page 1 |
+| `per_page` | rows per page; invalid values fall back to 10 and values are capped at 100 |
+| `q` | case-insensitive search across `event`, `message`, and `result` |
+| `result` | exact result filter |
+| `date_from` | inclusive lower bound on `create_time`, format `YYYY-MM-DD` |
+| `date_to` | inclusive upper bound on `create_time`, format `YYYY-MM-DD` |
+| `refresh` | meta-refresh interval in seconds; `0` disables auto refresh |
+
+Flow details:
+
+1. Query parsing is intentionally local to `routes/dashboard.py`; no extra repository or manager layer is introduced.
+2. Date parse errors are collected and shown in the template, while the invalid date filter is ignored.
+3. The route clamps `page` to available pages so empty out-of-range pages do not break rendering.
+4. Pagination links preserve current query parameters.
+
+## Template structure
+
+The frontend remains lightweight Flask + Jinja2 with no Node, React, Vue, bundler, or frontend build step.
+
+* `templates/base.html` contains the document skeleton, shared stylesheet include, header, and `{% block %}` placeholders.
+* `templates/dashboard.html` extends `base.html`, adds optional meta refresh, and composes the dashboard page.
+* `templates/partials/filter_form.html` renders search/filter/refresh controls.
+* `templates/partials/event_card.html` renders one persisted BetterGI event.
+* `templates/partials/pagination.html` renders previous/next pagination links.
 
 ## 模組責任邊界
 
@@ -131,13 +186,14 @@ better_gi_miniweb/
 * 載入 config mapping。
 * 初始化 logging 與 extensions。
 * 註冊 blueprints。
-* 不放 business logic、不直接處理 webhook payload、不定義 models。不要把 service 或 route 的邏輯塞回 `app_factory.py`。
+* 保留 `db.create_all()` 作為輕量 fallback，但不得把正式 migration 邏輯塞進 app factory。
+* 不放 business logic、不直接處理 webhook payload、不定義 models。
 
 ### `bettergi_miniweb/config.py`
 
 * 集中管理環境變數讀取與預設值。
-* 提供 `BASE_DIR`、`DEFAULT_DATABASE_URI`、`DEFAULT_PORT`、`get_log_level()`、`get_port()`、`get_app_config()`。
-* `create_app()` 需要的基本 config mapping 應由這裡提供。
+* 提供 `BASE_DIR`、`DEFAULT_DATABASE_URI`、`DEFAULT_PORT`、`DEFAULT_SCREENSHOT_STORAGE_DIR`、`get_log_level()`、`get_port()`、`get_app_config()`。
+* `create_app(test_config=...)` 必須持續支援測試覆蓋設定。
 
 ### `bettergi_miniweb/extensions.py`
 
@@ -147,8 +203,8 @@ better_gi_miniweb/
 ### `bettergi_miniweb/models.py`
 
 * 放 SQLAlchemy models。
-* 目前 `PostData` schema 與既有 SQLite table 相容。
-* 修改欄位前必須先說明 migration 策略。
+* `PostData` schema 由 Alembic migrations 管理。
+* `screenshot` 保留作為舊版 Base64 相容欄位；`screenshot_path` 是新版檔案儲存路徑欄位。
 
 ### `bettergi_miniweb/routes/*.py`
 
@@ -159,13 +215,13 @@ better_gi_miniweb/
 ### `bettergi_miniweb/services/*.py`
 
 * 放可測試的 business/application logic。
-* 目前 `webhook_service.py` 負責 Webhook payload normalization 與 persistence。
-* Service 可以使用 models 與 extensions，但不應依賴 Flask request object。
+* `webhook_service.py` 負責 Webhook payload normalization、persistence、screenshot file storage 與安全路徑解析。
+* Service 可以使用 models、extensions 與 Flask app config，但不應依賴 Flask request object。
 
 ### `tests/test_app.py`
 
-* 覆蓋 public API routes、錯誤路徑、圖片端點與相容入口。
-* 使用 temporary SQLite database。
+* 覆蓋 public API routes、錯誤路徑、圖片端點、Dashboard query behavior、Alembic migration 與相容入口。
+* 使用 temporary SQLite database 與 temporary screenshot storage。
 * 測試前後不可留下專案根目錄 `bettergi.db`。
 
 ## 新增 route 的步驟
@@ -189,9 +245,9 @@ better_gi_miniweb/
 ## 修改 model 的注意事項
 
 * `PostData` 對應既有 SQLite table，修改欄位可能造成資料不相容。
-* 不要直接修改 SQLite schema 而不寫清楚遷移策略。
-* 在導入 migration 前，任何 schema 變更都應獨立成小 PR，並明確標記破壞性影響。
-* 不要把圖片儲存方式變更與 schema 變更混在一般 route/service refactor 裡。
+* 所有 schema 變更都要新增 Alembic migration。
+* `db.create_all()` 只作為輕量 fallback，不是 schema migration 工具。
+* 不要把圖片儲存方式變更與不相關 route/service refactor 混在一起。
 
 ## 修改 config 的注意事項
 
@@ -215,6 +271,7 @@ test ! -e bettergi.db
 
 * 使用 pytest fixtures。
 * 使用 temporary SQLite database。
+* 使用 temporary screenshot storage。
 * 不污染專案根目錄 `bettergi.db`。
 * 覆蓋 public API route method list：`POST /`、`GET /`、`GET /health`、`GET /image/<int:image_id>`。
 
@@ -226,8 +283,8 @@ test ! -e bettergi.db
 - [ ] Public API routes 沒有意外改變。
 - [ ] `app.py` 相容入口仍可 import `app`、`create_app`、`db`、`PostData`、`normalize_webhook_payload`、`save_webhook_payload`。
 - [ ] `main.py` 相容層未被刪除。
-- [ ] 若修改 config，測試仍使用 temporary SQLite。
-- [ ] 若修改 model，PR 說明包含 migration / 相容策略。
+- [ ] 若修改 config，測試仍使用 temporary SQLite 與 temporary screenshot storage。
+- [ ] 若修改 model，PR 說明包含 Alembic migration / 相容策略。
 - [ ] 已執行 `ruff check .`、`pytest`、`git diff --check`。
 - [ ] 已確認 `test ! -e bettergi.db` 通過。
 
@@ -238,8 +295,9 @@ test ! -e bettergi.db
 * 不要把 business logic 塞回 `app_factory.py`。
 * 不要在 route 裡直接做複雜資料處理。
 * 不要繞過 service layer。
-* 不要直接修改 SQLite schema 而不寫清楚遷移策略。
+* 不要直接修改 SQLite schema 而不新增 Alembic migration。
 * 不要讓測試污染專案根目錄 `bettergi.db`。
+* 不要提交 runtime/cache/db/screenshot artifacts。
 * 不要跳過 `ruff check .`、`pytest`、`git diff --check`。
 * 不要把 security / migration / file storage refactor 混在同一個 PR。
 * 不要在未確認舊入口依賴前刪除 `main.py`。

@@ -1,0 +1,11 @@
+<nav class="w-full max-w-md mx-auto mb-4" aria-label="Pagination">
+    {% set args = request.args.to_dict() %}
+    {% if pagination.has_prev %}
+        {% set _ = args.update({'page': pagination.page - 1}) %}
+        <a href="{{ url_for('dashboard.page', **args) }}">上一頁</a>
+    {% endif %}
+    {% if pagination.has_next %}
+        {% set _ = args.update({'page': pagination.page + 1}) %}
+        <a href="{{ url_for('dashboard.page', **args) }}">下一頁</a>
+    {% endif %}
+</nav>

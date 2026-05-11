@@ -2,19 +2,19 @@
 <html lang="zh-cn">
 <head>
     <meta charset="UTF-8">
-    <title>BetterGI 信息流</title>
+    <title>{% block title %}BetterGI 信息流{% endblock %}</title>
     <style>
         .container_error {
-            width: 100%; /* 设置容器宽度为父元素的100% */
-            height: 100%; /* 设置容器高度为父元素的100% */
+            width: 100%;
+            height: 100%;
             border: 1px solid #ccc;
-            overflow-y: auto; /* 垂直方向自动添加滚动条 */
+            overflow-y: auto;
             box-sizing: border-box;
         }
         textarea {
             width: 100%;
             height: 100%;
-            resize: none; /* 禁止调整文本区域大小 */
+            resize: none;
             border: none;
             outline: none;
             font-size: 16px;
@@ -22,68 +22,21 @@
             box-sizing: border-box;
         }
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename= 'css/style_v2.css' ) }}">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style_v2.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% block head_extra %}{% endblock %}
 </head>
 <body>
 <main class="min-h-screen bg-background">
-<header class="fixed top-0 left-0 right-0 bg-background z-10 border-b">
-    <div class="container mx-auto py-4 text-center"><h1 class="text-2xl font-bold">BetterGI 信息流</h1>
-        <a
-            href="https://github.com/Because66666/better_gi_miniweb.git"
-            class="text-sm text-blue-500 hover:text-blue-700 transition-colors">开源项目地址</a></div>
-</header>
-<!--margin-top:值应该为头部值加上15px比较美观-->
-<div class="container mx-auto pt-20 pb-8 px-4" style="margin-top: 104px;">
-    {% for post in data %}
-    <div class="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-md mx-auto mb-4"
-         data-v0-t="card">
-        <div class="flex flex-col space-y-1.5 p-6">
-            {% if post.message == None %}
-            {% set my_string = '\n' %}
-            {% else %}
-            {% set my_string = post.message+'\n' %}{# 后添加空格防止错误 #}
-            {% endif %}
-            {% set parts = my_string.split('\n', 1) %} {# 使用 ' ' 分割，最多分割一次 #}
-            {% set first_part = parts[0] %} {# 第一部分 #}
-            {% set second_part = parts[1] %} {# 第二部分 #}
-            <h3 class="text-2xl font-semibold leading-none tracking-tight">
-            消息: {{  first_part}}</h3></div>
-        <div class="p-6 pt-0"><p class="text-muted-foreground">
-            时间：{{ post.timestamp }}
-
-            {% if post.event %}
-            <br>
-            事件：{{ post.event }}
-            {% endif %}
-
-            {% if post.result %}
-            <br>
-            结果：{{ post.result }}
-            {% endif %}
-
-
-            {% if second_part != '' %}
-            <br>
-            其他：
-            </p>
-            <div class="container_error">
-                <textarea>{{ second_part }}</textarea>
-            </div>
-            {% endif %}
-
-            {% if post.screenshot %}
-            <div class="mt-4"><img alt="picture" loading="lazy" width="400" height="200" decoding="async"
-                                   data-nimg="1" class="rounded-md object-cover w-full"
-                                   src="/image/{{ post.id }}" style="color: transparent;">
-            </div>
-            {% endif %}
+    <header class="fixed top-0 left-0 right-0 bg-background z-10 border-b">
+        <div class="container mx-auto py-4 text-center">
+            <h1 class="text-2xl font-bold">BetterGI 信息流</h1>
+            <a
+                href="https://github.com/Because66666/better_gi_miniweb.git"
+                class="text-sm text-blue-500 hover:text-blue-700 transition-colors">开源项目地址</a>
         </div>
-    </div>
-    {% endfor %}
-
-</div>
+    </header>
+    {% block content %}{% endblock %}
 </main>
 </body>
-
 </html>
