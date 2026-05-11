@@ -54,13 +54,13 @@ def resolve_screenshot_path(relative_path: str | None) -> Path | None:
     return candidate
 
 
-def _persist_screenshot_file(record: PostData, screenshot: str) -> bool:
-    """Decode and write a screenshot file, returning False for legacy-invalid data."""
+def _persist_screenshot_file(record: PostData, screenshot: str) -> Path | None:
+    """Decode and write a screenshot file, returning None for legacy-invalid data."""
 
     try:
         binary_data = base64.b64decode(screenshot, validate=True)
     except (binascii.Error, ValueError):
-        return False
+        return None
 
     relative_name = _relative_screenshot_name(record.id)
     target = resolve_screenshot_path(relative_name)
@@ -70,7 +70,17 @@ def _persist_screenshot_file(record: PostData, screenshot: str) -> bool:
     target.write_bytes(binary_data)
     record.screenshot = None
     record.screenshot_path = relative_name
-    return True
+    return target
+
+
+def _cleanup_screenshot_file(path: Path | None) -> None:
+    if path is None:
+        return
+
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        current_app.logger.exception("Failed to clean up orphan screenshot file: %s", path)
 
 
 def save_webhook_payload(payload: dict[str, Any]) -> PostData:
@@ -79,12 +89,21 @@ def save_webhook_payload(payload: dict[str, Any]) -> PostData:
     normalized = normalize_webhook_payload(payload)
     screenshot = normalized.pop("screenshot", None)
     record = PostData(**normalized, screenshot=None)
-    db.session.add(record)
-    db.session.flush()
+    written_screenshot: Path | None = None
 
-    if screenshot:
-        if not _persist_screenshot_file(record, screenshot):
-            record.screenshot = screenshot
+    try:
+        db.session.add(record)
+        db.session.flush()
 
-    db.session.commit()
+        if screenshot:
+            written_screenshot = _persist_screenshot_file(record, screenshot)
+            if written_screenshot is None:
+                record.screenshot = screenshot
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        _cleanup_screenshot_file(written_screenshot)
+        raise
+
     return record

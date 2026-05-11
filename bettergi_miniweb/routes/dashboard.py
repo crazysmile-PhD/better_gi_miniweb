@@ -6,7 +6,7 @@ from datetime import datetime, time, timezone
 from math import ceil
 from typing import Any
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, make_response, render_template, request
 from sqlalchemy import func, or_, select
 
 from bettergi_miniweb.extensions import db
@@ -96,27 +96,24 @@ def page():
     ).all()
     last_id = min((post.id for post in posts), default=0)
 
-    return render_template(
-        "dashboard.html",
-        data=posts,
-        last_id=last_id,
-        filters=filters,
-        filter_errors=filter_errors,
-        pagination={
-            "page": page_number,
-            "per_page": per_page,
-            "total": total,
-            "total_pages": total_pages,
-            "has_prev": page_number > 1,
-            "has_next": page_number < total_pages,
-        },
-        refresh=refresh,
+    response = make_response(
+        render_template(
+            "dashboard.html",
+            data=posts,
+            last_id=last_id,
+            filters=filters,
+            filter_errors=filter_errors,
+            pagination={
+                "page": page_number,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_prev": page_number > 1,
+                "has_next": page_number < total_pages,
+            },
+            refresh=refresh,
+        )
     )
-
-
-@dashboard_bp.after_app_request
-def add_header(response):
-    if request.method == "GET":
-        response.cache_control.public = True
-        response.cache_control.max_age = 86400
+    response.cache_control.no_store = True
+    response.cache_control.max_age = 0
     return response

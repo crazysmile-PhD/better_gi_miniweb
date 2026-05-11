@@ -78,9 +78,10 @@ better_gi_miniweb/
 
 1. `bettergi_miniweb/routes/image.py` loads `PostData` by id.
 2. If `screenshot_path` is present and resolves safely inside `SCREENSHOT_STORAGE_DIR`, the route serves that file.
-3. If no file-backed screenshot exists, the route falls back to the legacy Base64 `screenshot` column.
-4. Missing images return HTTP 404.
-5. Invalid legacy Base64 returns HTTP 422.
+3. If `screenshot_path` is present but unsafe, the route returns HTTP 404 immediately and does not fallback to legacy Base64.
+4. If no file-backed screenshot path exists, the route falls back to the legacy Base64 `screenshot` column.
+5. Missing images return HTTP 404.
+6. Invalid legacy Base64 returns HTTP 422.
 
 ## Screenshot storage flow
 
@@ -105,8 +106,9 @@ Rules:
 * `SCREENSHOT_STORAGE_DIR` defaults to `instance/screenshots/` and may be overridden by environment variable or test config.
 * New valid screenshots are decoded and written to files; SQLite only stores the safe relative path.
 * The legacy `screenshot` column remains for backward compatibility with existing SQLite databases.
-* `/image/<id>` always prefers `screenshot_path` and only falls back to `screenshot` if no readable file-backed image exists.
-* Screenshot paths are resolved under the configured storage root; unsafe paths that would escape the root are rejected.
+* `/image/<id>` always prefers `screenshot_path` and only falls back to `screenshot` when no file-backed path exists.
+* Screenshot paths are resolved under the configured storage root; unsafe paths that would escape the root are rejected with 404 and do not fallback to legacy Base64.
+* If DB commit fails after writing a screenshot file, the service rolls back and deletes the file written for that request to avoid orphan screenshot files.
 * Runtime screenshot files are ignored by git and must not be committed.
 
 ## Migration policy
@@ -118,10 +120,23 @@ Current revisions:
 * `202605110001_baseline_post_data.py` creates the baseline `post_data` table.
 * `202605110002_add_screenshot_path.py` adds `post_data.screenshot_path` for file-backed screenshots.
 
-Operational commands:
+Operational commands for a new empty database:
 
 ```bash
 python -m alembic upgrade head
+```
+
+Operational commands for an existing pre-Alembic database that already has the baseline `post_data` table:
+
+```bash
+python -m alembic stamp 202605110001
+python -m alembic upgrade head
+```
+
+When targeting a non-default database, use the same `DATABASE_URL` for both commands:
+
+```bash
+DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic stamp 202605110001
 DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic upgrade head
 ```
 
@@ -155,6 +170,7 @@ Flow details:
 2. Date parse errors are collected and shown in the template, while the invalid date filter is ignored.
 3. The route clamps `page` to available pages so empty out-of-range pages do not break rendering.
 4. Pagination links preserve current query parameters.
+5. Dashboard HTML responses set `Cache-Control: no-store, max-age=0`; health responses do not receive a one-day public cache header.
 
 ## Template structure
 

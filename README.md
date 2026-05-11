@@ -239,21 +239,31 @@ X-Webhook-Signature: sha256=<hex digest>
 2. 服務將 Base64 解碼為 bytes。
 3. 檔案寫入 `SCREENSHOT_STORAGE_DIR` 下的安全相對檔名，例如 `post_123.png`。
 4. SQLite 保存 `screenshot_path`，不再長期保存大型 Base64 字串。
-5. `/image/<id>` 優先讀取 `screenshot_path` 指向的檔案；若不存在，才 fallback 到舊版 `screenshot` Base64 欄位。
+5. `/image/<id>` 優先讀取 `screenshot_path` 指向的檔案；若沒有新版路徑，才 fallback 到舊版 `screenshot` Base64 欄位。
 
 `SCREENSHOT_STORAGE_DIR` 必須是應用程式可寫入的本機目錄；預設的 `instance/screenshots/` 已在 `.gitignore` 中排除，請不要提交 runtime 截圖檔。
 
+若 DB commit 失敗，服務會 rollback 並刪除本次 request 已寫入的截圖檔，避免留下 orphan screenshot file。若資料列含有 unsafe `screenshot_path`（例如嘗試跳出儲存根目錄），`/image/<id>` 會直接回 404，不會 fallback 到 legacy Base64，以避免掩蓋資料污染。
+
 ## Alembic migration
 
-從空資料庫建立 schema：
+新資料庫建立 schema：
 
 ```bash
 python -m alembic upgrade head
 ```
 
-使用非預設 SQLite 檔案或其他 SQLAlchemy URI：
+既有舊資料庫若已經有 pre-Alembic `post_data` table，請不要直接 `upgrade head`，否則 baseline migration 會嘗試 create 已存在的 table。請先確認目前 schema 符合 baseline（`id`、`event`、`result`、`timestamp`、`screenshot`、`create_time`、`message`），再 stamp baseline，最後升級到最新版：
 
 ```bash
+python -m alembic stamp 202605110001
+python -m alembic upgrade head
+```
+
+使用非預設 SQLite 檔案或其他 SQLAlchemy URI 時，請在兩個 Alembic 指令都帶同一個 `DATABASE_URL`：
+
+```bash
+DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic stamp 202605110001
 DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic upgrade head
 ```
 
@@ -284,7 +294,7 @@ Dashboard 無 query parameter 時維持顯示最新事件。可使用以下 quer
 http://127.0.0.1:222/?q=notification&result=success&page=2&per_page=20&refresh=30
 ```
 
-若日期格式錯誤，Dashboard 會顯示提示並忽略該日期條件。
+若日期格式錯誤，Dashboard 會顯示提示並忽略該日期條件。Dashboard HTML 回應使用 `Cache-Control: no-store, max-age=0`，避免搜尋、篩選與自動刷新被舊的 public cache 影響。
 
 ## For Developers
 

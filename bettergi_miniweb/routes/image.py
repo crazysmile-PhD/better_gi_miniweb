@@ -19,9 +19,12 @@ def serve_image(image_id: int):
     if post is None:
         return "Image not found", 404
 
-    screenshot_path = resolve_screenshot_path(post.screenshot_path)
-    if screenshot_path and screenshot_path.is_file():
-        return send_file(screenshot_path, mimetype="image/png")
+    if post.screenshot_path:
+        screenshot_path = resolve_screenshot_path(post.screenshot_path)
+        if screenshot_path is None:
+            return "Image not found", 404
+        if screenshot_path.is_file():
+            return send_file(screenshot_path, mimetype="image/png")
 
     if not post.screenshot:
         return "Image not found", 404

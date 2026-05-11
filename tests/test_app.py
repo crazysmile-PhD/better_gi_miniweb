@@ -223,6 +223,8 @@ def test_dashboard_page_renders(client):
     response = client.get("/")
 
     assert response.status_code == 200
+    assert response.cache_control.no_store
+    assert response.cache_control.max_age == 0
     assert "BetterGI" in response.get_data(as_text=True)
 
 
@@ -231,6 +233,8 @@ def test_health_endpoint_returns_ok(client):
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
+    assert not response.cache_control.public
+    assert response.cache_control.max_age is None
 
 
 def test_image_endpoint_returns_404_when_post_has_no_image(client):
@@ -282,9 +286,15 @@ def test_image_endpoint_serves_legacy_base64_png(client, app, transparent_png_ba
     assert response.mimetype == "image/png"
 
 
-def test_image_endpoint_rejects_unsafe_screenshot_path(client, app):
+def test_image_endpoint_rejects_unsafe_screenshot_path_without_legacy_fallback(
+    client, app, transparent_png_base64
+):
     with app.app_context():
-        unsafe_post = PostData(event="unsafe-screenshot", screenshot_path="../secret.png")
+        unsafe_post = PostData(
+            event="unsafe-screenshot",
+            screenshot=transparent_png_base64,
+            screenshot_path="../secret.png",
+        )
         db.session.add(unsafe_post)
         db.session.commit()
         post_id = unsafe_post.id
@@ -292,6 +302,24 @@ def test_image_endpoint_rejects_unsafe_screenshot_path(client, app):
     response = client.get(f"/image/{post_id}")
 
     assert response.status_code == 404
+
+
+def test_webhook_cleans_up_screenshot_file_when_commit_fails(
+    app, monkeypatch, transparent_png_base64
+):
+    def fail_commit():
+        raise RuntimeError("commit failed")
+
+    with app.app_context():
+        monkeypatch.setattr(db.session, "commit", fail_commit)
+
+        with pytest.raises(RuntimeError, match="commit failed"):
+            save_webhook_payload(
+                {"event": "commit-fails", "screenshot": transparent_png_base64}
+            )
+
+        screenshot_dir = Path(app.config["SCREENSHOT_STORAGE_DIR"])
+        assert list(screenshot_dir.glob("*.png")) == []
 
 
 def test_alembic_migrations_create_post_data_schema(monkeypatch, tmp_path):
@@ -315,6 +343,36 @@ def test_alembic_migrations_create_post_data_schema(monkeypatch, tmp_path):
         "message",
         "screenshot_path",
     ]
+
+
+def test_alembic_upgrade_existing_baseline_database_after_stamp(monkeypatch, tmp_path):
+    database_path = tmp_path / "existing.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "create table post_data ("
+            "id integer primary key autoincrement, "
+            "event text not null, "
+            "result text, "
+            "timestamp text, "
+            "screenshot text, "
+            "create_time datetime not null, "
+            "message text"
+            ")"
+        )
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
+    monkeypatch.setenv("SCREENSHOT_STORAGE_DIR", str(tmp_path / "existing-screenshots"))
+    alembic_config = Config("alembic.ini")
+
+    command.stamp(alembic_config, "202605110001")
+    command.upgrade(alembic_config, "head")
+
+    with sqlite3.connect(database_path) as connection:
+        columns = [row[1] for row in connection.execute("pragma table_info(post_data)")]
+        version = connection.execute("select version_num from alembic_version").fetchone()[0]
+
+    assert "screenshot_path" in columns
+    assert version == "202605110002"
 
 
 def test_dashboard_supports_pagination_search_result_and_date_filters(client, app):
