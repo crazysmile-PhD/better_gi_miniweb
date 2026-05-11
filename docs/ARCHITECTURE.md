@@ -4,7 +4,7 @@
 
 Better GI MiniWeb 是一個輕量級 Flask 應用，用來接收 BetterGI Webhook 事件，將事件資料寫入本機 SQLite，並透過簡單 Dashboard 顯示最近事件與 Base64 PNG 截圖。
 
-目前的重構目標是逐步把原本集中在單一 `app.py` 的程式碼拆成可維護的 package 結構，同時保持既有 API 與舊入口相容。
+目前的重構目標是逐步把原本集中在 `main.py`、`init_database.py`、`run.py` 等入口與工具檔中的程式碼拆成可維護的 package 結構，同時保持既有 API 與舊入口相容。
 
 本專案是小型 Flask 工具，不採用大型 enterprise architecture。重構目標是降低維護成本與修改風險，而不是把檔案拆得越細越好；目前 package 邊界已足夠，除非有明確需求，否則不要再新增抽象層。
 
@@ -51,11 +51,13 @@ Better GI MiniWeb 是一個輕量級 Flask 應用，用來接收 BetterGI Webhoo
 1. Flask app 由 `bettergi_miniweb.app_factory.create_app()` 建立。
 2. `create_app()` 初始化 config、logging、SQLAlchemy，並註冊 blueprints。
 3. `bettergi_miniweb.routes.webhook.webhook()` 接收 `POST /`。
-4. Route 只做 HTTP 層驗證，例如確認 request 是 JSON object。
-5. Route 呼叫 `bettergi_miniweb.services.webhook_service.save_webhook_payload()`。
-6. Service 執行 payload normalization 與必要欄位驗證。
-7. Service 建立 `PostData` model 並透過 shared `db.session` 寫入 SQLite。
-8. Route 回傳 `201` 與 `{ "msg": "OK", "id": ... }`。
+4. Route 先讀取 raw request body，供 HMAC-SHA256 signature 驗證使用。
+5. 若設定 `WEBHOOK_TOKEN` 或 `WEBHOOK_SIGNATURE_SECRET`，Route 會先執行 Webhook auth；驗證失敗回傳 HTTP 401。
+6. Auth 通過後，Route 才檢查 request 是否為 JSON object。
+7. Route 呼叫 `bettergi_miniweb.services.webhook_service.save_webhook_payload()`。
+8. Service 執行 payload normalization 與必要欄位驗證。
+9. Service 建立 `PostData` model 並透過 shared `db.session` 寫入 SQLite。
+10. Route 回傳 `201` 與 `{ "msg": "OK", "id": ... }`。
 
 ### Dashboard 讀取流程：`GET /`
 

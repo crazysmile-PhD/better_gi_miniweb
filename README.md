@@ -290,7 +290,7 @@ test ! -e bettergi.db
 2. 開啟 <http://127.0.0.1:222/health>，應回傳 `{"status":"ok"}`。
 3. 用 README 的 `curl` 範例送出 Webhook。
 4. 開啟 <http://127.0.0.1:222/>，應看得到新事件。
-5. 確認專案根目錄已建立 `bettergi.db`；手動驗證結束且不需保留資料時可刪除。
+5. 若使用預設 `DATABASE_URL`，手動啟動可能會在專案根目錄建立 `bettergi.db`；手動驗證結束後請刪除，並在提交前確認 `test ! -e bettergi.db` 通過。
 
 ## 常見問題
 
