@@ -2,7 +2,7 @@
 
 Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI 的 Webhook 通知、結果、時間戳與 Base64 截圖，並將資料寫入 SQLite，再透過瀏覽器 Dashboard 顯示最新事件。
 
-本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：使用者只需要準備目前最新穩定版 Python，建立單一虛擬環境後即可安裝與啟動。
+本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：本分支目前以 Python 3.14 為目標版本；若後續希望支援更多使用者環境，可以再評估放寬到 Python 3.12 或 3.13。
 
 ## 專案用途
 
@@ -16,7 +16,7 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 
 | 類別 | 版本策略 |
 | --- | --- |
-| Python | `>=3.14,<3.15`，以目前最新穩定版 Python 3.14 為目標 |
+| Python | `>=3.14,<3.15`，本分支目前以 Python 3.14 為目標 |
 | Flask | `>=3.1.3,<3.2` |
 | Flask-SQLAlchemy | `>=3.1.1,<3.2` |
 | SQLAlchemy | `>=2.0.49,<2.1`，使用 SQLAlchemy 2.x 查詢與 Session API |
@@ -167,6 +167,8 @@ curl -X POST http://127.0.0.1:222/ \
   -d '{"event":"notification","message":"hello from BetterGI"}'
 ```
 
+如果設定 `WEBHOOK_TOKEN`，請在請求中提供 `Authorization: Bearer <token>` 或 `X-Webhook-Token`。如果設定 `WEBHOOK_SIGNATURE_SECRET`，請在 `X-Webhook-Signature` 提供 raw request body 的 HMAC-SHA256，格式為 `sha256=<hex digest>`。
+
 完整範例：
 
 ```json
@@ -279,7 +281,7 @@ python -m pip install -r requirements.txt
 ## 已知技術債
 
 * 截圖仍以 Base64 文字保存於 SQLite，資料量大時會造成資料庫膨脹。
-* Webhook 尚未加入 token、signature 或來源驗證，公開到外網前應補上驗證機制。
+* Webhook 已支援選填 token 與 HMAC-SHA256 signature 驗證；若公開到外網，仍建議搭配 HTTPS、反向代理、來源限制與 rate limit。
 * 目前 Dashboard 無分頁、搜尋、篩選與即時更新。
 * 尚未導入 Alembic migration；資料模型調整仍依賴 `db.create_all()`。
 * 前端仍是單一 Jinja2 template，尚未 component 化。
@@ -287,7 +289,7 @@ python -m pip install -r requirements.txt
 ## 後續建議重構方向
 
 1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
-2. 新增 Webhook token / HMAC signature 驗證。
+2. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
 3. 拆分 Blueprint、service layer、repository layer，降低路由與資料庫耦合。
 4. 導入 Alembic migration 管理資料庫 schema。
 5. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。

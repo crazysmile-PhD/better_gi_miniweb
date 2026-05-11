@@ -4,7 +4,7 @@
 
 Better GI MiniWeb 是一個輕量級 Flask 應用，用來接收 BetterGI Webhook 事件，將事件資料寫入本機 SQLite，並透過簡單 Dashboard 顯示最近事件與 Base64 PNG 截圖。
 
-目前的重構目標是逐步把原本集中在單一 `app.py` 的程式碼拆成可維護的 package 結構，同時保持既有 API 與舊入口相容。
+目前的重構目標是逐步把原本集中在 main.py、init_database.py、run.py 的程式碼拆成可維護的 package 結構，同時保持既有 API 與舊入口相容。
 
 本專案是小型 Flask 工具，不採用大型 enterprise architecture。重構目標是降低維護成本與修改風險，而不是把檔案拆得越細越好；目前 package 邊界已足夠，除非有明確需求，否則不要再新增抽象層。
 
