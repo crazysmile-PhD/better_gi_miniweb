@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import importlib
+import json
 import sys
 from pathlib import Path
 
@@ -142,6 +145,108 @@ def test_webhook_persists_valid_payload(client, app):
         assert post.result == "success"
         assert post.timestamp == "2026-05-07T00:00:00Z"
         assert post.message == "Hello\nDetails"
+
+
+def test_webhook_accepts_configured_bearer_token(tmp_path):
+    database_path = tmp_path / "token.db"
+    flask_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "WEBHOOK_TOKEN": "secret-token",
+        }
+    )
+
+    client = flask_app.test_client()
+    bearer_response = client.post(
+        "/",
+        json={"event": "secured-bearer"},
+        headers={"Authorization": "Bearer secret-token"},
+    )
+    token_header_response = client.post(
+        "/",
+        json={"event": "secured-header"},
+        headers={"X-Webhook-Token": "secret-token"},
+    )
+
+    assert bearer_response.status_code == 201
+    assert token_header_response.status_code == 201
+
+    with flask_app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+
+def test_webhook_rejects_missing_configured_token(tmp_path):
+    database_path = tmp_path / "token-reject.db"
+    flask_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "WEBHOOK_TOKEN": "secret-token",
+        }
+    )
+
+    response = flask_app.test_client().post("/", json={"event": "secured"})
+
+    assert response.status_code == 401
+    assert response.get_json()["msg"] == "error"
+
+    with flask_app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+
+def test_webhook_accepts_configured_hmac_signature(tmp_path):
+    database_path = tmp_path / "signature.db"
+    flask_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "WEBHOOK_SIGNATURE_SECRET": "signature-secret",
+        }
+    )
+    raw_body = json.dumps({"event": "signed"}, separators=(",", ":")).encode("utf-8")
+    signature = hmac.new(b"signature-secret", raw_body, hashlib.sha256).hexdigest()
+
+    response = flask_app.test_client().post(
+        "/",
+        data=raw_body,
+        content_type="application/json",
+        headers={"X-Webhook-Signature": f"sha256={signature}"},
+    )
+
+    assert response.status_code == 201
+
+    with flask_app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+
+def test_webhook_rejects_invalid_configured_hmac_signature(tmp_path):
+    database_path = tmp_path / "signature-reject.db"
+    flask_app = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            "WEBHOOK_SIGNATURE_SECRET": "signature-secret",
+        }
+    )
+    raw_body = json.dumps({"event": "signed"}, separators=(",", ":")).encode("utf-8")
+
+    response = flask_app.test_client().post(
+        "/",
+        data=raw_body,
+        content_type="application/json",
+        headers={"X-Webhook-Signature": "sha256=bad"},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["msg"] == "error"
+
+    with flask_app.app_context():
+        db.session.remove()
+        db.drop_all()
 
 
 def test_dashboard_page_renders(client):

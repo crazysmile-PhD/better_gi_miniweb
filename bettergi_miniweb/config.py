@@ -30,4 +30,6 @@ def get_app_config() -> dict[str, Any]:
         "SQLALCHEMY_DATABASE_URI": os.getenv("DATABASE_URL", DEFAULT_DATABASE_URI),
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         "JSON_SORT_KEYS": False,
+        "WEBHOOK_TOKEN": os.getenv("WEBHOOK_TOKEN", ""),
+        "WEBHOOK_SIGNATURE_SECRET": os.getenv("WEBHOOK_SIGNATURE_SECRET", ""),
     }

@@ -2,7 +2,7 @@
 
 Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI 的 Webhook 通知、結果、時間戳與 Base64 截圖，並將資料寫入 SQLite，再透過瀏覽器 Dashboard 顯示最新事件。
 
-本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：使用者只需要準備目前最新穩定版 Python，建立單一虛擬環境後即可安裝與啟動。
+本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：本分支目前以 Python 3.14 為目標版本；若後續希望支援更多使用者環境，可以再評估放寬到 Python 3.12 或 3.13。
 
 ## 專案用途
 
@@ -16,7 +16,7 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 
 | 類別 | 版本策略 |
 | --- | --- |
-| Python | `>=3.14,<3.15`，以目前最新穩定版 Python 3.14 為目標 |
+| Python | `>=3.14,<3.15`，本分支目前以 Python 3.14 為目標 |
 | Flask | `>=3.1.3,<3.2` |
 | Flask-SQLAlchemy | `>=3.1.1,<3.2` |
 | SQLAlchemy | `>=2.0.49,<2.1`，使用 SQLAlchemy 2.x 查詢與 Session API |
@@ -37,7 +37,7 @@ better_gi_miniweb/
 ├── app.py                            # WSGI / Flask CLI / python app.py 相容入口
 ├── bettergi_miniweb/                 # Flask package：factory、config、models、routes、services
 │   ├── app_factory.py                # create_app、extensions 初始化、blueprint registration
-│   ├── config.py                     # BASE_DIR、DB URI、PORT、LOG_LEVEL 與基本 config mapping
+│   ├── config.py                     # BASE_DIR、DB URI、PORT、LOG_LEVEL、Webhook auth 與基本 config mapping
 │   ├── extensions.py                 # Flask extension instances
 │   ├── models.py                     # SQLAlchemy models
 │   ├── routes/                       # Blueprint route modules
@@ -69,7 +69,7 @@ better_gi_miniweb/
 核心 Flask package，包含：
 
 * `app_factory.py`：建立 Flask app、套用設定、初始化 SQLAlchemy、註冊 blueprints。
-* `config.py`：集中管理 `BASE_DIR`、預設 DB URI、預設 port、`LOG_LEVEL` 與基本 config mapping。
+* `config.py`：集中管理 `BASE_DIR`、預設 DB URI、預設 port、`LOG_LEVEL`、Webhook auth env vars 與基本 config mapping。
 * `models.py`：SQLite 資料模型。
 * `routes/`：`POST /`、`GET /`、`GET /health`、`GET /image/<int:image_id>` blueprints。
 * `services/`：Webhook payload 驗證、正規化與保存邏輯。
@@ -130,7 +130,7 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-## 啟動方式
+## 快速啟動
 
 安裝依賴後執行：
 
@@ -144,13 +144,26 @@ python run.py
 * Webhook URL：<http://127.0.0.1:222/>
 * Health Check：<http://127.0.0.1:222/health>
 
-如需改 port：
+`run.py` 會在啟動時檢查 Python 版本與 runtime dependencies，並在 Flask application context 內安全執行 `db.create_all()` 建立缺少的 SQLite tables。
+
+## 環境變數
+
+| 變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `HOST` | `0.0.0.0` | gevent WSGI server 綁定的 host。 |
+| `PORT` | `222` | Dashboard、Webhook 與 health check 使用的 port。 |
+| `DATABASE_URL` | `sqlite:///bettergi.db` | SQLAlchemy database URI；預設資料庫位於專案根目錄。 |
+| `LOG_LEVEL` | `INFO` | Flask app logging level。 |
+| `WEBHOOK_TOKEN` | 空字串 | 選填；設定後需提供 `Authorization: Bearer <token>` 或 `X-Webhook-Token`。 |
+| `WEBHOOK_SIGNATURE_SECRET` | 空字串 | 選填；設定後需提供以 raw request body 計算的 `X-Webhook-Signature` HMAC-SHA256。 |
+
+macOS / Linux 修改 port 範例：
 
 ```bash
 PORT=8080 python run.py
 ```
 
-Windows PowerShell：
+Windows PowerShell 修改 port 範例：
 
 ```powershell
 $env:PORT = "8080"
@@ -187,6 +200,8 @@ curl -X POST http://127.0.0.1:222/ \
 * `message`：選填，顯示在 Dashboard 的訊息。
 * `screenshot`：選填，Base64 PNG 字串。
 
+如果設定 `WEBHOOK_TOKEN`，請在請求中提供 `Authorization: Bearer <token>` 或 `X-Webhook-Token`。如果設定 `WEBHOOK_SIGNATURE_SECRET`，請在 `X-Webhook-Signature` 提供 raw request body 的 HMAC-SHA256 hex digest；支援純 hex 或 `sha256=<hex>` 格式。
+
 
 ## For Developers
 
@@ -219,8 +234,6 @@ test ! -e bettergi.db
 
 ### 目前架構拆分原則
 
-### 目前架構拆分原則
-
 本專案是小型 Flask 工具，不採用大型 enterprise architecture。現有 package 邊界已足夠，後續重構目標是降低維護成本，不是繼續增加檔案或抽象層。
 
 * `app_factory.py` 只保留 app 建立、config loading、extension 初始化與 blueprint registration；不要把 business logic 塞回 `app_factory.py`。
@@ -234,12 +247,23 @@ test ! -e bettergi.db
 
 ## 驗證方式
 
+首次設定測試工具：
+
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install pytest ruff
+```
+
+每次提交前建議執行：
+
+```bash
 ruff check .
 pytest
+git diff --check
+test ! -e bettergi.db
 ```
+
+測試應使用 temporary SQLite，不應污染專案根目錄的 `bettergi.db`；如果手動啟動後產生 `bettergi.db`，請在提交前移除。
 
 手動啟動驗證：
 
@@ -247,13 +271,13 @@ pytest
 2. 開啟 <http://127.0.0.1:222/health>，應回傳 `{"status":"ok"}`。
 3. 用 README 的 `curl` 範例送出 Webhook。
 4. 開啟 <http://127.0.0.1:222/>，應看得到新事件。
-5. 檢查專案根目錄是否建立 `bettergi.db`。
+5. 確認專案根目錄已建立 `bettergi.db`；手動驗證結束且不需保留資料時可刪除。
 
 ## 常見問題
 
 ### 啟動時顯示 Python 版本太舊
 
-請安裝目前最新穩定版 Python，重新建立 `.venv`，再執行：
+請安裝本分支目前支援的 Python 3.14，重新建立 `.venv`，再執行：
 
 ```bash
 python -m pip install --upgrade pip
@@ -279,7 +303,7 @@ python -m pip install -r requirements.txt
 ## 已知技術債
 
 * 截圖仍以 Base64 文字保存於 SQLite，資料量大時會造成資料庫膨脹。
-* Webhook 尚未加入 token、signature 或來源驗證，公開到外網前應補上驗證機制。
+* Webhook 已支援選填 token 與 HMAC-SHA256 signature 驗證；若公開到外網，仍建議搭配 HTTPS、反向代理、來源限制與 rate limit。
 * 目前 Dashboard 無分頁、搜尋、篩選與即時更新。
 * 尚未導入 Alembic migration；資料模型調整仍依賴 `db.create_all()`。
 * 前端仍是單一 Jinja2 template，尚未 component 化。
@@ -287,11 +311,12 @@ python -m pip install -r requirements.txt
 ## 後續建議重構方向
 
 1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
-2. 新增 Webhook token / HMAC signature 驗證。
-3. 拆分 Blueprint、service layer、repository layer，降低路由與資料庫耦合。
-4. 導入 Alembic migration 管理資料庫 schema。
-5. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
-6. 增加更多 pytest 測試與端到端啟動測試。
+2. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
+3. 導入 Alembic migration 管理資料庫 schema。
+4. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
+5. 增加更多 pytest 測試與端到端啟動測試。
+
+以上項目應拆成獨立 PR；不要把 security、migration、file storage 或 Dashboard 功能混在同一次變更。
 
 ## 破壞性變更說明
 
