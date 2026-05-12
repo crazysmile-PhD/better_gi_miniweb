@@ -9,6 +9,7 @@ from typing import Any
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_URI = f"sqlite:///{BASE_DIR / 'bettergi.db'}"
 DEFAULT_PORT = 222
+DEFAULT_SCREENSHOT_STORAGE_DIR = BASE_DIR / "instance" / "screenshots"
 
 
 def get_log_level() -> str:
@@ -32,4 +33,7 @@ def get_app_config() -> dict[str, Any]:
         "JSON_SORT_KEYS": False,
         "WEBHOOK_TOKEN": os.getenv("WEBHOOK_TOKEN"),
         "WEBHOOK_SIGNATURE_SECRET": os.getenv("WEBHOOK_SIGNATURE_SECRET"),
+        "SCREENSHOT_STORAGE_DIR": os.getenv(
+            "SCREENSHOT_STORAGE_DIR", str(DEFAULT_SCREENSHOT_STORAGE_DIR)
+        ),
     }

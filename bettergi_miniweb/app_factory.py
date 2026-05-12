@@ -36,8 +36,9 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     db.init_app(app)
 
-    with app.app_context():
-        db.create_all()
+    if not app.config.get("SKIP_CREATE_ALL"):
+        with app.app_context():
+            db.create_all()
 
     app.register_blueprint(webhook_bp)
     app.register_blueprint(dashboard_bp)

@@ -1,15 +1,16 @@
 # Better GI MiniWeb
 
-Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI 的 Webhook 通知、結果、時間戳與 Base64 截圖，並將資料寫入 SQLite，再透過瀏覽器 Dashboard 顯示最新事件。
+Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI 的 Webhook 通知、結果、時間戳與截圖，將事件 metadata 寫入 SQLite，將新截圖寫入檔案儲存，再透過瀏覽器 Dashboard 顯示事件。
 
-本次重構已移除對舊版 Runtime 的硬性依賴，專案目標是降低使用者電腦上的多版本環境負擔：本分支目前以 Python 3.14 為目標版本；若後續希望支援更多使用者環境，可以再評估放寬到 Python 3.12 或 3.13。
+本分支目前以 Python 3.14 為目標版本；若後續希望支援更多使用者環境，可以再評估放寬到 Python 3.12 或 3.13。
 
 ## 專案用途
 
 * 接收 BetterGI 以 `POST /` 發送的 JSON Webhook。
 * 將事件資料寫入本機 SQLite 資料庫 `bettergi.db`。
-* 以 `GET /` 顯示最近 10 筆通知與截圖。
-* 以 `GET /image/<int:image_id>` 讀取資料庫中的 Base64 截圖並回傳 PNG。
+* 將新 webhook 的 Base64 PNG 截圖解碼後保存到 `instance/screenshots/` 或自訂目錄，SQLite 僅保存相對路徑。
+* 以 `GET /` 顯示可分頁、搜尋、篩選、可自動刷新的 Dashboard。
+* 以 `GET /image/<int:image_id>` 讀取檔案截圖，並相容讀取舊版 SQLite Base64 截圖。
 * 以 `GET /health` 提供啟動與監控驗證。
 
 ## 目前 Runtime 與套件版本
@@ -20,6 +21,7 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 | Flask | `>=3.1.3,<3.2` |
 | Flask-SQLAlchemy | `>=3.1.1,<3.2` |
 | SQLAlchemy | `>=2.0.49,<2.1` |
+| Alembic | `>=1.17.2,<1.18` |
 | gevent | `>=26.4.0,<27.0` |
 | Werkzeug | `>=3.1.8,<3.2` |
 | Jinja2 | `>=3.1.6,<3.2` |
@@ -33,25 +35,28 @@ Better GI MiniWeb 是一個輕量級 Flask Web 應用，用來接收 BetterGI �
 
 ```text
 better_gi_miniweb/
-├── .github/workflows/python-app.yml  # GitHub Actions：Python 3.14 安裝、Ruff lint、pytest
-├── app.py                            # WSGI / Flask CLI / python app.py 相容入口
-├── bettergi_miniweb/                 # Flask package：factory、config、models、routes、services
-│   ├── app_factory.py                # create_app、extensions 初始化、blueprint registration
-│   ├── config.py                     # BASE_DIR、DB URI、PORT、LOG_LEVEL 與基本 config mapping
-│   ├── extensions.py                 # Flask extension instances
-│   ├── models.py                     # SQLAlchemy models
-│   ├── routes/                       # Blueprint route modules
-│   └── services/                     # Webhook service logic
-├── docs/ARCHITECTURE.md              # 開發者架構與維護規則
-├── init_database.py                  # SQLite 初始化與 post_load 匯入工具
-├── main.py                           # 舊入口相容層，保留 from main import app 用法
-├── pyproject.toml                    # 專案 metadata、Python 版本要求、pytest / ruff 設定
-├── requirements.txt                  # Runtime 相依套件版本範圍
-├── run.py                            # gevent 啟動器與 Runtime / 依賴檢查
-├── static/css/style_v2.css           # Dashboard 樣式
-├── templates/base.html               # Dashboard Jinja2 模板
-├── test.py                           # 開發用原始 Webhook 請求捕捉服務
-└── tests/test_app.py                 # 基本啟動、Webhook、SQLite、圖片端點測試
+├── alembic.ini                      # Alembic CLI 設定
+├── app.py                           # WSGI / Flask CLI / python app.py 相容入口
+├── bettergi_miniweb/                # Flask package：factory、config、models、routes、services
+│   ├── app_factory.py               # create_app、extensions 初始化、blueprint registration
+│   ├── config.py                    # BASE_DIR、DB URI、PORT、LOG_LEVEL、截圖目錄與 config mapping
+│   ├── extensions.py                # Flask extension instances
+│   ├── models.py                    # SQLAlchemy models
+│   ├── routes/                      # Blueprint route modules
+│   └── services/                    # Webhook 與截圖保存 service logic
+├── docs/ARCHITECTURE.md             # 開發者架構與維護規則
+├── init_database.py                 # SQLite 初始化與 post_load 匯入工具
+├── main.py                          # 舊入口相容層，保留 from main import app 用法
+├── migrations/                      # Alembic migration environment 與 versions
+├── pyproject.toml                   # 專案 metadata、Python 版本要求、pytest / ruff 設定
+├── requirements.txt                 # Runtime 相依套件版本範圍
+├── run.py                           # gevent 啟動器與 Runtime / 依賴檢查
+├── static/css/style_v2.css          # Dashboard 樣式
+├── templates/
+│   ├── base.html                    # 共用 HTML skeleton
+│   ├── dashboard.html               # Dashboard page template
+│   └── partials/                    # event card、filter form、pagination partials
+└── tests/test_app.py                # Webhook、Dashboard、圖片端點與相容入口測試
 ```
 
 ## 主要檔案功能
@@ -68,11 +73,18 @@ better_gi_miniweb/
 
 核心 Flask package，包含：
 
-* `app_factory.py`：建立 Flask app、套用設定、初始化 SQLAlchemy、註冊 blueprints。
-* `config.py`：集中管理 `BASE_DIR`、預設 DB URI、預設 port、`LOG_LEVEL` 與基本 config mapping。
-* `models.py`：SQLite 資料模型。
+* `app_factory.py`：建立 Flask app、套用設定、初始化 SQLAlchemy、註冊 blueprints。`db.create_all()` 仍保留為空資料庫的輕量 fallback；正式 schema 變更以 Alembic migration 為準。
+* `config.py`：集中管理 `BASE_DIR`、預設 DB URI、預設 port、截圖儲存目錄、`LOG_LEVEL` 與基本 config mapping。
+* `models.py`：SQLite 資料模型，包含舊版 `screenshot` Base64 欄位與新版 `screenshot_path` 檔案路徑欄位。
 * `routes/`：`POST /`、`GET /`、`GET /health`、`GET /image/<int:image_id>` blueprints。
-* `services/`：Webhook payload 驗證、正規化與保存邏輯。
+* `services/`：Webhook payload 驗證、正規化、截圖解碼與保存邏輯。
+
+### `migrations/`
+
+Alembic migration 環境：
+
+* `202605110001_baseline_post_data.py`：目前 `post_data` schema baseline。
+* `202605110002_add_screenshot_path.py`：新增 `screenshot_path` 欄位，讓新截圖以檔案儲存。
 
 ### `run.py`
 
@@ -80,7 +92,6 @@ better_gi_miniweb/
 
 * 檢查 Python 是否為 `3.14+`。
 * 檢查 Flask / gevent 等依賴是否已安裝。
-* 自動建立 SQLite tables。
 * 使用 gevent WSGI server 啟動服務。
 
 ### `init_database.py`
@@ -144,7 +155,7 @@ python run.py
 * Webhook URL：<http://127.0.0.1:222/>
 * Health Check：<http://127.0.0.1:222/health>
 
-`run.py` 會在啟動時檢查 Python 版本與 runtime dependencies，並在 Flask application context 內安全執行 `db.create_all()` 建立缺少的 SQLite tables。
+`run.py` 會在啟動時檢查 Python 版本與 runtime dependencies。`create_app()` 仍會安全執行 `db.create_all()` 作為輕量 fallback，方便空 SQLite 在未執行 Alembic 時仍可啟動；正式 schema 變更與既有資料庫升級請使用 Alembic migration。
 
 ## 環境變數
 
@@ -154,6 +165,7 @@ python run.py
 | `PORT` | `222` | Dashboard、Webhook、health check 使用的 port |
 | `DATABASE_URL` | `sqlite:///bettergi.db` | SQLAlchemy database URI |
 | `LOG_LEVEL` | `INFO` | Flask app logging level |
+| `SCREENSHOT_STORAGE_DIR` | `instance/screenshots/` | 新截圖檔案儲存目錄；DB 只存相對檔名 |
 | `WEBHOOK_TOKEN` | 未設定 | 選填 bearer token |
 | `WEBHOOK_SIGNATURE_SECRET` | 未設定 | 選填 HMAC-SHA256 簽章密鑰 |
 
@@ -217,13 +229,78 @@ X-Webhook-Signature: sha256=<hex digest>
 * `result`：選填，任務結果。
 * `timestamp`：選填，BetterGI 發出的時間。
 * `message`：選填，顯示在 Dashboard 的訊息。
-* `screenshot`：選填，Base64 PNG 字串。
+* `screenshot`：選填，Base64 PNG 字串。新資料會解碼寫入檔案，SQLite 只保存 `screenshot_path`；舊資料庫的 Base64 `screenshot` 欄位仍可由 `/image/<id>` 讀取。
+
+## Screenshot storage
+
+新 webhook payload 若包含合法 Base64 `screenshot`：
+
+1. `save_webhook_payload()` 先寫入事件 metadata 並取得 `post_data.id`。
+2. 服務將 Base64 解碼為 bytes。
+3. 檔案寫入 `SCREENSHOT_STORAGE_DIR` 下的安全相對檔名，例如 `post_123.png`。
+4. SQLite 保存 `screenshot_path`，不再長期保存大型 Base64 字串。
+5. `/image/<id>` 優先讀取 `screenshot_path` 指向的檔案；若沒有新版路徑，才 fallback 到舊版 `screenshot` Base64 欄位。
+
+`SCREENSHOT_STORAGE_DIR` 必須是應用程式可寫入的本機目錄；預設的 `instance/screenshots/` 已在 `.gitignore` 中排除，請不要提交 runtime 截圖檔。
+
+若 DB commit 失敗，服務會 rollback 並刪除本次 request 已寫入的截圖檔，避免留下 orphan screenshot file。若資料列含有 unsafe `screenshot_path`（例如嘗試跳出儲存根目錄），`/image/<id>` 會直接回 404，不會 fallback 到 legacy Base64，以避免掩蓋資料污染。
+
+## Alembic migration
+
+新資料庫建立 schema：
+
+```bash
+python -m alembic upgrade head
+```
+
+既有舊資料庫若已經有 pre-Alembic `post_data` table，請不要直接 `upgrade head`，否則 baseline migration 會嘗試 create 已存在的 table。請先確認目前 schema 符合 baseline（`id`、`event`、`result`、`timestamp`、`screenshot`、`create_time`、`message`），再 stamp baseline，最後升級到最新版：
+
+```bash
+python -m alembic stamp 202605110001
+python -m alembic upgrade head
+```
+
+使用非預設 SQLite 檔案或其他 SQLAlchemy URI 時，請在兩個 Alembic 指令都帶同一個 `DATABASE_URL`：
+
+```bash
+DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic stamp 202605110001
+DATABASE_URL=sqlite:////path/to/bettergi.db python -m alembic upgrade head
+```
+
+新增 schema 變更時：
+
+1. 更新 `bettergi_miniweb/models.py`。
+2. 新增 `migrations/versions/<revision>_<description>.py`。
+3. 在 temporary database 上執行 `python -m alembic upgrade head` 驗證。
+4. 執行 `ruff check .`、`pytest`、`git diff --check`、`test ! -e bettergi.db`。
+
+## Dashboard 查詢功能
+
+Dashboard 無 query parameter 時維持顯示最新事件。可使用以下 query parameters：
+
+| Parameter | 說明 |
+| --- | --- |
+| `page` | 頁碼，預設 `1` |
+| `per_page` | 每頁筆數，預設 `10`，上限 `100` |
+| `q` | 搜尋 `event` / `message` / `result` |
+| `result` | 依 `result` 精準篩選，例如 `success` |
+| `date_from` | 依 `create_time` 起日篩選，格式 `YYYY-MM-DD` |
+| `date_to` | 依 `create_time` 迄日篩選，格式 `YYYY-MM-DD` |
+| `refresh` | 自動刷新秒數；`0` 或省略代表不自動刷新 |
+
+範例：
+
+```text
+http://127.0.0.1:222/?q=notification&result=success&page=2&per_page=20&refresh=30
+```
+
+若日期格式錯誤，Dashboard 會顯示提示並忽略該日期條件。Dashboard HTML 回應使用 `Cache-Control: no-store, max-age=0`，避免搜尋、篩選與自動刷新被舊的 public cache 影響。
 
 ## For Developers
 
 更完整的架構與維護規則請先閱讀 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
-該文件說明 request flow、模組責任邊界、新增 route/service 的步驟、model/config 修改注意事項、測試規則與 PR checklist。
+該文件說明 request flow、screenshot storage flow、migration policy、dashboard query / pagination flow、template structure、模組責任邊界、新增 route/service 的步驟、測試規則與 PR checklist。
 
 ### 安裝開發依賴
 
@@ -245,22 +322,16 @@ test ! -e bettergi.db
 
 測試應使用 temporary SQLite，不應污染專案根目錄的 `bettergi.db`。
 
-### 入口與 factory 的用途差異
-
-* `bettergi_miniweb.app_factory.create_app()`：主要 application factory，負責建立 Flask app、載入 config、初始化 extensions 並註冊 blueprints。
-* `app.py`：相容 WSGI / Flask CLI / `python app.py` 的入口，仍匯出 `app`、`create_app`、`db`、`PostData` 與 webhook service helpers。
-* `main.py`：舊入口相容層，保留 `from main import app`、`Post_data`、`save_data` 等歷史用法；未確認舊依賴前不要刪除。
-
 ### 目前架構拆分原則
 
 本專案是小型 Flask 工具，不採用大型 enterprise architecture。現有 package 邊界已足夠，後續重構目標是降低維護成本，不是繼續增加檔案或抽象層。
 
 * `app_factory.py` 只保留 app 建立、config loading、extension 初始化與 blueprint registration；不要把 business logic 塞回 `app_factory.py`。
 * `routes/` 只處理 HTTP request/response 與 status code；不要讓 route 直接承擔複雜資料處理。
-* `services/` 放可測試的 business/application logic，例如 webhook payload normalization 與 persistence。
-* `models.py` 放 SQLAlchemy models；任何 schema 變更都需要獨立規劃 migration / 相容策略。
+* `services/` 放可測試的 business/application logic，例如 webhook payload normalization、persistence 與 screenshot file storage。
+* `models.py` 放 SQLAlchemy models；任何 schema 變更都需要 Alembic migration。
+* `templates/base.html` 提供共用 skeleton，Dashboard 內容在 `templates/dashboard.html` 與 `templates/partials/`。
 * `routes/health.py`、`extensions.py`、`routes/__init__.py`、`services/__init__.py` 雖然偏薄，但目前可接受，不要只為了減少檔案數而合併。
-* 只有在兩個檔案永遠一起修改、沒有不同依賴、沒有不同測試需求，且合併後責任仍清楚時，才允許合併。
 * 不要新增 `repositories/`、`domain/`、`use_cases/`、`interfaces/`、`adapters/`、`schemas/`、`dto/`、`managers/` 或 generic helpers。
 * 不要把 security、migration、file storage refactor 混在同一個 PR。
 
@@ -286,11 +357,12 @@ test ! -e bettergi.db
 
 手動啟動驗證：
 
-1. 執行 `python run.py`。
-2. 開啟 <http://127.0.0.1:222/health>，應回傳 `{"status":"ok"}`。
-3. 用 README 的 `curl` 範例送出 Webhook。
-4. 開啟 <http://127.0.0.1:222/>，應看得到新事件。
-5. 若使用預設 `DATABASE_URL`，手動啟動可能會在專案根目錄建立 `bettergi.db`；手動驗證結束後請刪除，並在提交前確認 `test ! -e bettergi.db` 通過。
+1. 執行 `python -m alembic upgrade head` 初始化或升級資料庫。
+2. 執行 `python run.py`。
+3. 開啟 <http://127.0.0.1:222/health>，應回傳 `{"status":"ok"}`。
+4. 用 README 的 `curl` 範例送出 Webhook。
+5. 開啟 <http://127.0.0.1:222/>，應看得到新事件。
+6. 若使用預設 `DATABASE_URL`，手動啟動可能會在專案根目錄建立 `bettergi.db`；手動驗證結束後請刪除，並在提交前確認 `test ! -e bettergi.db` 通過。
 
 ## 常見問題
 
@@ -319,35 +391,24 @@ python -m pip install -r requirements.txt
 
 ### `/image/<int:image_id>` 回傳 Invalid image data
 
-該筆資料的 `screenshot` 欄位不是合法 Base64。請檢查 BetterGI 發出的 payload，或使用 `test.py` 捕捉原始請求。
+該筆舊版資料的 `screenshot` 欄位不是合法 Base64。請檢查 BetterGI 發出的 payload，或使用 `test.py` 捕捉原始請求。
 
 ## 已知技術債
 
-* 截圖仍以 Base64 文字保存於 SQLite，資料量大時會造成資料庫膨脹。
 * Webhook 已支援選填 token 與 HMAC-SHA256 signature 驗證；若公開到外網，仍建議搭配 HTTPS、反向代理、來源限制與 rate limit。
-* 目前 Dashboard 無分頁、搜尋、篩選與即時更新。
-* 尚未導入 Alembic migration；資料模型調整仍依賴 `db.create_all()`。
-* 前端仍是單一 Jinja2 template，尚未 component 化。
+* 舊版資料庫中可能仍存在 Base64 screenshot 欄位；如需完全清理，可另做 migration / cleanup 工具。
 
 ## 後續建議重構方向
 
 後續改動請維持小 PR、單一目的，不要把 security、migration、file storage 或大型 UI 調整混在同一個 PR。
 
-1. 將截圖改存為檔案或物件儲存，SQLite 僅保存路徑與 metadata。
-2. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
-3. 導入 Alembic migration 管理資料庫 schema。
-4. 增加 Dashboard 分頁、搜尋、日期篩選與自動刷新。
-5. 增加更多 pytest 測試與端到端啟動測試。
-
-以上項目應拆成獨立 PR；不要把 security、migration、file storage 或 Dashboard 功能混在同一次變更。
+1. 強化外網部署安全，例如 HTTPS、反向代理、來源 IP 限制、rate limit 與更完整的部署範例。
+2. 若需要完全移除舊版 Base64 截圖欄位，另做 migration / cleanup 工具。
+3. 增加更多 pytest 測試與端到端啟動測試。
 
 ## 已知相容性注意事項
 
 * `POST /` 要求 `Content-Type: application/json`，且 body 必須是 JSON object。
 * `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
 * 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
-* 首次啟動不建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
-* `POST /` 要求 `Content-Type: application/json`，且 body 必須是 JSON object。
-* `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
-* 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
-* 首次啟動不建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
+* `create_app()` 仍保留 `db.create_all()` 作為輕量 fallback，但正式 schema 變更與升級應使用 Alembic migration。

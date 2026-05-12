@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block head_extra %}
+{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto pt-20 pb-8 px-4" style="margin-top: 104px;">
+    {% include "partials/filter_form.html" %}
+    <p class="w-full max-w-md mx-auto mb-4">
+        第 {{ pagination.page }} / {{ pagination.total_pages }} 頁，共 {{ pagination.total }} 筆
+    </p>
+
+    {% for post in data %}
+        {% include "partials/event_card.html" %}
+    {% endfor %}
+
+    {% include "partials/pagination.html" %}
+</div>
+{% endblock %}

@@ -19,6 +19,7 @@ class PostData(db.Model):
     result: Mapped[str | None] = mapped_column(db.Text, nullable=True)
     timestamp: Mapped[str | None] = mapped_column(db.Text, nullable=True)
     screenshot: Mapped[str | None] = mapped_column(db.Text, nullable=True, default=None)
+    screenshot_path: Mapped[str | None] = mapped_column(db.Text, nullable=True, default=None)
     create_time: Mapped[datetime] = mapped_column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
