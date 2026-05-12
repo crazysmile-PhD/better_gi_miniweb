@@ -351,3 +351,23 @@ python -m pip install -r requirements.txt
 * `event` 欄位為必填非空字串；缺少時會回傳 HTTP 400。
 * 啟動器不會自動執行 `pip install`，避免在使用者不知情時修改全域 Python；請在虛擬環境內明確執行安裝指令。
 * 首次啟動不建立 `client.txt` sentinel file；資料庫初始化改為每次啟動安全執行 `db.create_all()`。
+
+## 脚本规范审计工具
+
+本仓库提供 `tools/audit_script_specs.py`，可对 BetterGI 社区脚本仓库执行一轮可自动判定的规范检查，帮助找出命名和元数据不符合提交规范的脚本。
+
+```bash
+python tools/audit_script_specs.py /path/to/scripts --fail-on-violations
+```
+
+目前会检查：
+
+* 地图追踪脚本是否位于约定的一级分类目录下。
+* 地图追踪脚本文件名是否包含编号、材料名、地点和“数量个”。
+* 地图追踪脚本 JSON 中的 `name` 字段是否与文件名一致。
+* 地图追踪脚本文件名材料名是否与材料目录一致。
+* JS 脚本目录是否避免空格并包含 `manifest.json`。
+* 说明文件是否使用大小写正确的 `README.md`。
+* 常见战斗策略目录中的 `.txt` 策略是否包含 `//作者：你的名字` 格式署名。
+
+该工具只报告能从文件名、目录名和 JSON 元数据稳定判断的问题；路线质量、实战效率、自动战斗参数是否合理等仍需要人工实测。

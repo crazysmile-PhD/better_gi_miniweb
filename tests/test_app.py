@@ -32,6 +32,7 @@ PYTHON_SOURCE_FILES = (
     "bettergi_miniweb/services/__init__.py",
     "bettergi_miniweb/services/webhook_service.py",
     "tests/test_app.py",
+    "tools/audit_script_specs.py",
 )
 
 
@@ -283,3 +284,44 @@ def test_route_method_list_contains_public_api(app):
     assert ("/", ("POST",)) in routes
     assert ("/health", ("GET",)) in routes
     assert ("/image/<int:image_id>", ("GET",)) in routes
+
+
+def test_script_audit_reports_pathing_name_and_metadata_violations(tmp_path):
+    from tools.audit_script_specs import audit, format_markdown
+
+    pathing_dir = tmp_path / "pathing" / "矿物" / "水晶块"
+    pathing_dir.mkdir(parents=True)
+    bad_script = pathing_dir / "1-铁块-璃月-绝云间-6.json"
+    bad_script.write_text('{"name":"01-水晶块-璃月-绝云间-6个"}', encoding="utf-8")
+
+    report = format_markdown(audit(tmp_path), tmp_path)
+
+    assert "地图追踪编号" in report
+    assert "地图追踪数量" in report
+    assert "地图追踪材料目录" in report
+    assert "JSON name 字段" in report
+
+
+def test_script_audit_accepts_standard_pathing_script(tmp_path):
+    from tools.audit_script_specs import audit
+
+    pathing_dir = tmp_path / "pathing" / "矿物" / "水晶块"
+    pathing_dir.mkdir(parents=True)
+    script = pathing_dir / "01-水晶块-璃月-绝云间-6个.json"
+    script.write_text('{"name":"01-水晶块-璃月-绝云间-6个"}', encoding="utf-8")
+
+    assert audit(tmp_path) == []
+
+
+def test_script_audit_reports_js_folder_and_readme_violations(tmp_path):
+    from tools.audit_script_specs import audit, format_markdown
+
+    script_dir = tmp_path / "js" / "auto helper"
+    script_dir.mkdir(parents=True)
+    (script_dir / "readme.md").write_text("# helper", encoding="utf-8")
+
+    report = format_markdown(audit(tmp_path), tmp_path)
+
+    assert "JS 文件夹命名" in report
+    assert "JS manifest" in report
+    assert "README 文件名" in report
